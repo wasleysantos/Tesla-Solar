@@ -1,0 +1,18 @@
+Abra o terminal como administrador, execute:
+
+npm install
+
+Depois:
+
+npm run dev
+
+Você deve ver algo como:
+
+VITE v5.x ready in xxx ms
+
+➜  Local:   http://localhost:3000/
+
+
+👉 Abra no navegador:
+
+http://localhost:3000/
