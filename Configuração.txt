@@ -1,18 +1,23 @@
-Abra o terminal como administrador, execute:
+### 1️⃣ Pré-requisitos
 
+- Node.js (versão LTS recomendada)
+- npm
+
+### 2️⃣ Instalação
+
+````bash
 npm install
 
-Depois:
 
+### 3️⃣ Executar em ambiente de desenvolvimento
+
+```bash
 npm run dev
 
-Você deve ver algo como:
+Acesse no navegador:
 
-VITE v5.x ready in xxx ms
+````
 
-➜  Local:   http://localhost:3000/
+http://localhost:3000
 
-
-👉 Abra no navegador:
-
-http://localhost:3000/
+```
