@@ -15,19 +15,27 @@ export default function App() {
   useEffect(() => {
     const loadSession = async () => {
       const { data, error } = await supabase.auth.getSession();
-      if (!error) {
-        const u = data.session?.user;
-        if (u) {
-          setUser({
-            name: (u.user_metadata?.name as string) || "Usuário",
-            email: u.email || "",
-          });
-          setCurrentScreen("dashboard");
-        } else {
-          setUser(null);
-          setCurrentScreen("login");
-        }
+
+      if (error) {
+        console.error("Erro ao obter sessão:", error.message);
+        setUser(null);
+        setCurrentScreen("login");
+        setLoading(false);
+        return;
       }
+
+      const u = data.session?.user;
+      if (u) {
+        setUser({
+          name: (u.user_metadata?.name as string) || "Usuário",
+          email: u.email || "",
+        });
+        setCurrentScreen("dashboard");
+      } else {
+        setUser(null);
+        setCurrentScreen("login");
+      }
+
       setLoading(false);
     };
 
@@ -52,16 +60,29 @@ export default function App() {
     };
   }, []);
 
-  // Login REAL (Supabase) - chamado pelo seu Login.tsx (sem mudar o layout)
-  const handleLogin = async (email: string, password: string) => {
+  // ✅ Login REAL (Supabase) - agora retorna mensagem de erro para o Login.tsx exibir
+  const handleLogin = async (email: string, password: string): Promise<string | null> => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      alert(error.message);
+
+    if (!error) return null;
+
+    // Mensagens amigáveis (sem expor texto técnico)
+    const msg = (error.message || "").toLowerCase();
+
+    if (msg.includes("invalid login credentials")) {
+      return "E-mail ou senha incorretos.";
     }
-    // Se deu certo, o onAuthStateChange acima leva pro dashboard
+    if (msg.includes("email not confirmed")) {
+      return "Seu e-mail ainda não foi confirmado. Verifique sua caixa de entrada.";
+    }
+    if (msg.includes("too many requests")) {
+      return "Muitas tentativas. Aguarde um pouco e tente novamente.";
+    }
+
+    return "Não foi possível entrar agora. Tente novamente.";
   };
 
-  // Cadastro REAL (Supabase) - chamado pelo seu Signup.tsx (sem mudar o layout)
+  // ✅ Cadastro REAL (Supabase) - mantém o layout do Signup e usa alert como antes
   const handleSignup = async (name: string, email: string, password: string) => {
     const { error } = await supabase.auth.signUp({
       email,
@@ -74,14 +95,13 @@ export default function App() {
       return;
     }
 
-    // Se a confirmação por e-mail estiver ativa no Supabase:
-    // o usuário precisa confirmar e depois fazer login.
-    alert("Conta criada! Se a confirmação por e-mail estiver ativa, verifique sua caixa de entrada.");
+    alert(
+      "Conta criada! Se a confirmação por e-mail estiver ativa, verifique sua caixa de entrada."
+    );
   };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    // onAuthStateChange já volta para login
   };
 
   if (loading) {
