@@ -67,11 +67,11 @@ export function Login({ onLogin, onNavigateToSignup }: LoginProps) {
 
           {/* Mensagem de erro (não muda o layout, só aparece quando existir) */}
           {errorMessage && (
-           <div className="mb-6 rounded-lg border border-red-700 bg-red-600 px-4 py-3">
-            <p className="text-sm font-semibold text-black">
-              {errorMessage}
-            </p>
-          </div>
+           <div className="mb-6 rounded-lg border border-red-700 bg-red-400 px-4 py-3">
+  <p className="text-sm font-medium text-gray-900">
+    {errorMessage}
+  </p>
+</div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
