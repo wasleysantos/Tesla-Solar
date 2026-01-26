@@ -8,7 +8,7 @@ interface LoginProps {
   // Se o seu onLogin atual retorna void, ainda vai funcionar.
   onLogin: (
     email: string,
-    password: string,
+    password: string
   ) => Promise<string | null> | string | null | void;
   onNavigateToSignup: () => void;
 }
@@ -48,11 +48,7 @@ export function Login({ onLogin, onNavigateToSignup }: LoginProps) {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex flex-col items-center justify-center mb-12">
-          <img
-            src={logoImage}
-            alt="Logo"
-            className="h-16 mb-3 object-contain"
-          />
+          <img src={logoImage} alt="Logo" className="h-16 mb-3 object-contain" />
           <div className="text-center">
             <p className="text-green-400 font-bold text-lg tracking-[0.2em] uppercase bg-gradient-to-r from-green-400 to-emerald-300 bg-clip-text text-transparent">
               Multimedidor Fotovoltaico
@@ -65,13 +61,13 @@ export function Login({ onLogin, onNavigateToSignup }: LoginProps) {
           <h2 className="text-2xl font-bold text-white mb-2">Bem-vindo</h2>
           <p className="text-gray-400 mb-8">Entre para acessar seu sistema</p>
 
-          {/* Mensagem de erro (não muda o layout, só aparece quando existir) */}
+          {/* Mensagem de erro (forte, fundo vermelho e texto preto) */}
           {errorMessage && (
-      <div className="mb-6 rounded-lg border-2 border-red-900 bg-red-600 px-4 py-3 shadow-lg shadow-red-900/40">
-  <p className="text-sm font-bold text-red text-center">
-    {errorMessage}
-  </p>
-</div>
+            <div className="mb-6 rounded-lg border-2 border-red-900 bg-red-600 px-4 py-3 shadow-lg shadow-red-900/40">
+              <p className="text-sm font-bold text-black text-center">
+                {errorMessage}
+              </p>
+            </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -85,7 +81,10 @@ export function Login({ onLogin, onNavigateToSignup }: LoginProps) {
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setErrorMessage("");
+                  }}
                   className="w-full bg-[#0a1628] text-white pl-12 pr-4 py-3 rounded-lg border border-gray-700 focus:border-green-500 focus:outline-none transition-colors"
                   placeholder="seu@email.com"
                   required
@@ -104,7 +103,10 @@ export function Login({ onLogin, onNavigateToSignup }: LoginProps) {
                 <input
                   type="password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setErrorMessage("");
+                  }}
                   className="w-full bg-[#0a1628] text-white pl-12 pr-4 py-3 rounded-lg border border-gray-700 focus:border-green-500 focus:outline-none transition-colors"
                   placeholder="••••••••"
                   required
