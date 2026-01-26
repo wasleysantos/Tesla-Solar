@@ -1,60 +1,47 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Login } from "./components/Login";
 import { Signup } from "./components/Signup";
 import { Dashboard } from "./components/Dashboard";
-import { supabase } from "./lib/supabase";
-
-type Screen = "login" | "signup" | "dashboard";
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<Screen>("login");
-  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
+  const [currentScreen, setCurrentScreen] = useState<
+    "login" | "signup" | "dashboard"
+  >("login");
+  const [user, setUser] = useState<{ name: string; email: string } | null>(
+    null
+  );
 
-  useEffect(() => {
-    // Carrega sessão ao abrir o app
-    supabase.auth.getSession().then(({ data }) => {
-      const u = data.session?.user;
-      if (u) {
-        setUser({
-          name: (u.user_metadata?.name as string) || "Usuário",
-          email: u.email || "",
-        });
-        setCurrentScreen("dashboard");
-      }
-    });
+  const handleLogin = (email: string, password: string) => {
+    // Mock login
+    setUser({ name: "Usuário", email });
+    setCurrentScreen("dashboard");
+  };
 
-    // Escuta login/logout
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      const u = session?.user;
-      if (u) {
-        setUser({
-          name: (u.user_metadata?.name as string) || "Usuário",
-          email: u.email || "",
-        });
-        setCurrentScreen("dashboard");
-      } else {
-        setUser(null);
-        setCurrentScreen("login");
-      }
-    });
+  const handleSignup = (name: string, email: string, password: string) => {
+    // Mock signup
+    setUser({ name, email });
+    setCurrentScreen("dashboard");
+  };
 
-    return () => sub.subscription.unsubscribe();
-  }, []);
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
+  const handleLogout = () => {
+    setUser(null);
+    setCurrentScreen("login");
   };
 
   return (
     <div className="min-h-screen bg-[#0a1628]">
       {currentScreen === "login" && (
-        <Login onNavigateToSignup={() => setCurrentScreen("signup")} />
+        <Login
+          onLogin={handleLogin}
+          onNavigateToSignup={() => setCurrentScreen("signup")}
+        />
       )}
-
       {currentScreen === "signup" && (
-        <Signup onNavigateToLogin={() => setCurrentScreen("login")} />
+        <Signup
+          onSignup={handleSignup}
+          onNavigateToLogin={() => setCurrentScreen("login")}
+        />
       )}
-
       {currentScreen === "dashboard" && user && (
         <Dashboard user={user} onLogout={handleLogout} />
       )}
