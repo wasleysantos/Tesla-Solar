@@ -1,46 +1,92 @@
 import { useEffect, useState } from "react";
-import { supabase } from "./lib/supabase";
 import { Login } from "./components/Login";
 import { Signup } from "./components/Signup";
 import { Dashboard } from "./components/Dashboard";
+import { supabase } from "./lib/supabase";
 
 type Screen = "login" | "signup" | "dashboard";
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>("login");
+  const [currentScreen, setCurrentScreen] = useState<Screen>("login");
+  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Carrega sessão do Supabase ao iniciar + escuta mudanças de login/logout
   useEffect(() => {
-    // 1) Carrega sessão ao iniciar
-    supabase.auth.getSession().then(({ data, error }) => {
-      if (error) {
-        console.error("Erro ao obter sessão:", error.message);
-        setScreen("login");
-      } else {
-        setScreen(data.session ? "dashboard" : "login");
+    const loadSession = async () => {
+      const { data, error } = await supabase.auth.getSession();
+      if (!error) {
+        const u = data.session?.user;
+        if (u) {
+          setUser({
+            name: (u.user_metadata?.name as string) || "Usuário",
+            email: u.email || "",
+          });
+          setCurrentScreen("dashboard");
+        } else {
+          setUser(null);
+          setCurrentScreen("login");
+        }
       }
       setLoading(false);
-    });
+    };
 
-    // 2) Escuta mudanças de login/logout
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setScreen(session ? "dashboard" : "login");
+    loadSession();
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const u = session?.user;
+      if (u) {
+        setUser({
+          name: (u.user_metadata?.name as string) || "Usuário",
+          email: u.email || "",
+        });
+        setCurrentScreen("dashboard");
+      } else {
+        setUser(null);
+        setCurrentScreen("login");
       }
-    );
+    });
 
     return () => {
       listener.subscription.unsubscribe();
     };
   }, []);
 
+  // Login REAL (Supabase) - chamado pelo seu Login.tsx (sem mudar o layout)
+  const handleLogin = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      alert(error.message);
+    }
+    // Se deu certo, o onAuthStateChange acima leva pro dashboard
+  };
+
+  // Cadastro REAL (Supabase) - chamado pelo seu Signup.tsx (sem mudar o layout)
+  const handleSignup = async (name: string, email: string, password: string) => {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { name } },
+    });
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    // Se a confirmação por e-mail estiver ativa no Supabase:
+    // o usuário precisa confirmar e depois fazer login.
+    alert("Conta criada! Se a confirmação por e-mail estiver ativa, verifique sua caixa de entrada.");
+  };
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    // onAuthStateChange já volta para login
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0a1628] text-white">
+      <div className="min-h-screen bg-[#0a1628] flex items-center justify-center text-white">
         Carregando...
       </div>
     );
@@ -48,17 +94,22 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0a1628]">
-      {screen === "login" && (
-        <Login onNavigateToSignup={() => setScreen("signup")} />
+      {currentScreen === "login" && (
+        <Login
+          onLogin={handleLogin}
+          onNavigateToSignup={() => setCurrentScreen("signup")}
+        />
       )}
 
-      {screen === "signup" && (
-        <Signup onNavigateToLogin={() => setScreen("login")} />
+      {currentScreen === "signup" && (
+        <Signup
+          onSignup={handleSignup}
+          onNavigateToLogin={() => setCurrentScreen("login")}
+        />
       )}
 
-      {screen === "dashboard" && (
-        // Se o seu Dashboard ainda usa props, me diga que eu ajusto aqui.
-        <Dashboard onLogout={handleLogout} />
+      {currentScreen === "dashboard" && user && (
+        <Dashboard user={user} onLogout={handleLogout} />
       )}
     </div>
   );

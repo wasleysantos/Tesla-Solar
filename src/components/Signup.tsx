@@ -1,143 +1,154 @@
-import { useState } from "react";
-import { supabase } from "../lib/supabase";
-import { Mail, Lock, User } from "lucide-react";
+import { useState } from 'react';
+import { Sun, User, Mail, Lock } from 'lucide-react';
 
 interface SignupProps {
+  onSignup: (name: string, email: string, password: string) => void;
   onNavigateToLogin: () => void;
 }
 
-export function Signup({ onNavigateToLogin }: SignupProps) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [info, setInfo] = useState("");
+export function Signup({ onSignup, onNavigateToLogin }: SignupProps) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    setInfo("");
+    setError('');
 
     if (password !== confirmPassword) {
-      setError("As senhas não conferem.");
+      setError('As senhas não coincidem');
       return;
     }
 
-    setLoading(true);
-
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { name },
-      },
-    });
-
-    if (error) {
-      setError(error.message);
-      setLoading(false);
+    if (password.length < 6) {
+      setError('A senha deve ter pelo menos 6 caracteres');
       return;
     }
 
-    setInfo(
-      "Conta criada com sucesso! Verifique seu e-mail se a confirmação estiver ativada."
-    );
-    setLoading(false);
+    if (name && email && password) {
+      onSignup(name, email, password);
+    }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0a1628]">
-      <form
-        onSubmit={handleSubmit}
-        className="bg-[#0f1f3d] p-8 rounded-xl w-full max-w-sm text-white"
-      >
-        <h1 className="text-2xl font-bold mb-6 text-center">Criar conta</h1>
-
-        {error && (
-          <p className="mb-4 text-red-400 text-sm text-center">{error}</p>
-        )}
-
-        {info && (
-          <p className="mb-4 text-green-400 text-sm text-center">{info}</p>
-        )}
-
-        <div className="mb-4">
-          <label className="text-sm">Nome</label>
-          <div className="flex items-center bg-[#09162e] rounded mt-1">
-            <User className="ml-2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              className="bg-transparent p-2 w-full outline-none text-white"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </div>
+    <div className="min-h-screen flex flex-col items-center justify-center p-6">
+      <div className="w-full max-w-md">
+        {/* Logo */}
+        <div className="flex items-center justify-center gap-3 mb-12">
+          <Sun className="w-10 h-10 text-yellow-400" />
+          <h1 className="text-3xl font-bold text-white">Tesla Solar</h1>
         </div>
 
-        <div className="mb-4">
-          <label className="text-sm">Email</label>
-          <div className="flex items-center bg-[#09162e] rounded mt-1">
-            <Mail className="ml-2 w-4 h-4 text-gray-400" />
-            <input
-              type="email"
-              className="bg-transparent p-2 w-full outline-none text-white"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
+        {/* Signup Form */}
+        <div className="bg-[#1a2942] rounded-2xl p-8 shadow-xl">
+          <h2 className="text-2xl font-bold text-white mb-2">Criar Conta</h2>
+          <p className="text-gray-400 mb-8">Cadastre-se para começar</p>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Name Input */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Nome Completo
+              </label>
+              <div className="relative">
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full bg-[#0a1628] text-white pl-12 pr-4 py-3 rounded-lg border border-gray-700 focus:border-green-500 focus:outline-none transition-colors"
+                  placeholder="João Silva"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Email Input */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                E-mail
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-[#0a1628] text-white pl-12 pr-4 py-3 rounded-lg border border-gray-700 focus:border-green-500 focus:outline-none transition-colors"
+                  placeholder="seu@email.com"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Password Input */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Senha
+              </label>
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-[#0a1628] text-white pl-12 pr-4 py-3 rounded-lg border border-gray-700 focus:border-green-500 focus:outline-none transition-colors"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Confirm Password Input */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Confirmar Senha
+              </label>
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full bg-[#0a1628] text-white pl-12 pr-4 py-3 rounded-lg border border-gray-700 focus:border-green-500 focus:outline-none transition-colors"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Error Message */}
+            {error && (
+              <div className="bg-red-500/10 border border-red-500 text-red-400 px-4 py-3 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
+
+            {/* Submit Button */}
+            <button
+              type="submit"
+              className="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-3 rounded-lg transition-colors"
+            >
+              Criar Conta
+            </button>
+          </form>
+
+          {/* Login Link */}
+          <div className="mt-6 text-center">
+            <p className="text-gray-400">
+              Já tem uma conta?{' '}
+              <button
+                onClick={onNavigateToLogin}
+                className="text-green-400 hover:text-green-300 font-semibold transition-colors"
+              >
+                Entrar
+              </button>
+            </p>
           </div>
         </div>
-
-        <div className="mb-4">
-          <label className="text-sm">Senha</label>
-          <div className="flex items-center bg-[#09162e] rounded mt-1">
-            <Lock className="ml-2 w-4 h-4 text-gray-400" />
-            <input
-              type="password"
-              className="bg-transparent p-2 w-full outline-none text-white"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
-        </div>
-
-        <div className="mb-6">
-          <label className="text-sm">Confirmar senha</label>
-          <div className="flex items-center bg-[#09162e] rounded mt-1">
-            <Lock className="ml-2 w-4 h-4 text-gray-400" />
-            <input
-              type="password"
-              className="bg-transparent p-2 w-full outline-none text-white"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-            />
-          </div>
-        </div>
-
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-green-600 hover:bg-green-700 transition p-2 rounded font-semibold"
-        >
-          {loading ? "Criando..." : "Criar conta"}
-        </button>
-
-        <p className="mt-4 text-center text-sm">
-          Já tem conta?{" "}
-          <button
-            type="button"
-            onClick={onNavigateToLogin}
-            className="text-blue-400 hover:underline"
-          >
-            Voltar para login
-          </button>
-        </p>
-      </form>
+      </div>
     </div>
   );
 }
