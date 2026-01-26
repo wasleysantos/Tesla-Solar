@@ -68,7 +68,7 @@ export function Login({ onLogin, onNavigateToSignup }: LoginProps) {
           {/* Mensagem de erro (não muda o layout, só aparece quando existir) */}
           {errorMessage && (
       <div className="mb-6 rounded-lg border-2 border-red-900 bg-red-600 px-4 py-3 shadow-lg shadow-red-900/40">
-  <p className="text-sm font-bold text-black text-center">
+  <p className="text-sm font-bold text-red text-center">
     {errorMessage}
   </p>
 </div>
