@@ -6,7 +6,10 @@ import ifmaImage from "figma:asset/ifma.png";
 interface LoginProps {
   // Agora aceita retornar uma mensagem de erro (string) ou null.
   // Se o seu onLogin atual retorna void, ainda vai funcionar.
-  onLogin: (email: string, password: string) => Promise<string | null> | string | null | void;
+  onLogin: (
+    email: string,
+    password: string,
+  ) => Promise<string | null> | string | null | void;
   onNavigateToSignup: () => void;
 }
 
@@ -65,7 +68,7 @@ export function Login({ onLogin, onNavigateToSignup }: LoginProps) {
           {/* Mensagem de erro (não muda o layout, só aparece quando existir) */}
           {errorMessage && (
             <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3">
-              <p className="text-sm text-red-300">{errorMessage}</p>
+              <p className="text-sm text-red-500">{errorMessage}</p>
             </div>
           )}
 
