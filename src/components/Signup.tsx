@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Sun, User, Mail, Lock } from 'lucide-react';
+import { useState } from "react";
+import { User, Mail, Lock } from "lucide-react";
+import logoImage from "figma:asset/86a5dbd476eaf5850e2d574675b5ba3853e32186.png";
 
 interface SignupProps {
   onSignup: (name: string, email: string, password: string) => void;
@@ -7,38 +8,50 @@ interface SignupProps {
 }
 
 export function Signup({ onSignup, onNavigateToLogin }: SignupProps) {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState('');
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
 
     if (password !== confirmPassword) {
-      setError('As senhas não coincidem');
+      setError("As senhas não coincidem");
       return;
     }
 
     if (password.length < 6) {
-      setError('A senha deve ter pelo menos 6 caracteres');
+      setError("A senha deve ter pelo menos 6 caracteres");
       return;
     }
 
     if (name && email && password) {
-      onSignup(name, email, password);
-    }
+    onSignup(name, email, password);
+
+    // opcional: limpar campos
+    setName("");
+    setEmail("");
+    setPassword("");
+    setConfirmPassword("");
+
+    // voltar para o login
+    onNavigateToLogin();
+  }
   };
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="flex items-center justify-center gap-3 mb-12">
-          <Sun className="w-10 h-10 text-yellow-400" />
-          <h1 className="text-3xl font-bold text-white">Tesla Solar</h1>
+        {/* Logo (somente imagem) */}
+        <div className="flex items-center justify-center mb-12">
+          <img
+            src={logoImage}
+            alt="Logo"
+            className="h-16 object-contain"
+          />
         </div>
 
         {/* Signup Form */}
@@ -47,7 +60,7 @@ export function Signup({ onSignup, onNavigateToLogin }: SignupProps) {
           <p className="text-gray-400 mb-8">Cadastre-se para começar</p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Name Input */}
+            {/* Nome */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
                 Nome Completo
@@ -65,7 +78,7 @@ export function Signup({ onSignup, onNavigateToLogin }: SignupProps) {
               </div>
             </div>
 
-            {/* Email Input */}
+            {/* Email */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
                 E-mail
@@ -83,7 +96,7 @@ export function Signup({ onSignup, onNavigateToLogin }: SignupProps) {
               </div>
             </div>
 
-            {/* Password Input */}
+            {/* Senha */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
                 Senha
@@ -101,7 +114,7 @@ export function Signup({ onSignup, onNavigateToLogin }: SignupProps) {
               </div>
             </div>
 
-            {/* Confirm Password Input */}
+            {/* Confirmar Senha */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
                 Confirmar Senha
@@ -119,14 +132,14 @@ export function Signup({ onSignup, onNavigateToLogin }: SignupProps) {
               </div>
             </div>
 
-            {/* Error Message */}
+            {/* Erro */}
             {error && (
               <div className="bg-red-500/10 border border-red-500 text-red-400 px-4 py-3 rounded-lg text-sm">
                 {error}
               </div>
             )}
 
-            {/* Submit Button */}
+            {/* Botão */}
             <button
               type="submit"
               className="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-3 rounded-lg transition-colors"
@@ -135,10 +148,10 @@ export function Signup({ onSignup, onNavigateToLogin }: SignupProps) {
             </button>
           </form>
 
-          {/* Login Link */}
+          {/* Voltar para Login */}
           <div className="mt-6 text-center">
             <p className="text-gray-400">
-              Já tem uma conta?{' '}
+              Já tem uma conta?{" "}
               <button
                 onClick={onNavigateToLogin}
                 className="text-green-400 hover:text-green-300 font-semibold transition-colors"

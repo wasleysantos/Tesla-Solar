@@ -2,14 +2,24 @@ import { useEffect, useState } from "react";
 import { Login } from "./components/Login";
 import { Signup } from "./components/Signup";
 import { Dashboard } from "./components/Dashboard";
+import { ResetPassword } from "./components/ResetPassword";
 import { supabase } from "./lib/supabase";
 
-type Screen = "login" | "signup" | "dashboard";
+type Screen = "login" | "signup" | "dashboard" | "reset-password";
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<Screen>("login");
   const [user, setUser] = useState<{ name: string; email: string } | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // ✅ Detecta rota simples sem React Router
+  // Quando o usuário clica no link do e-mail do Supabase, ele volta para /reset-password
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path === "/reset-password") {
+      setCurrentScreen("reset-password");
+    }
+  }, []);
 
   // Carrega sessão do Supabase ao iniciar + escuta mudanças de login/logout
   useEffect(() => {
@@ -19,7 +29,10 @@ export default function App() {
       if (error) {
         console.error("Erro ao obter sessão:", error.message);
         setUser(null);
-        setCurrentScreen("login");
+
+        // Se estiver resetando senha, não forçamos voltar para login
+        setCurrentScreen((prev) => (prev === "reset-password" ? prev : "login"));
+
         setLoading(false);
         return;
       }
@@ -30,10 +43,12 @@ export default function App() {
           name: (u.user_metadata?.name as string) || "Usuário",
           email: u.email || "",
         });
-        setCurrentScreen("dashboard");
+
+        // Se já está resetando senha, mantém na tela de reset
+        setCurrentScreen((prev) => (prev === "reset-password" ? prev : "dashboard"));
       } else {
         setUser(null);
-        setCurrentScreen("login");
+        setCurrentScreen((prev) => (prev === "reset-password" ? prev : "login"));
       }
 
       setLoading(false);
@@ -43,15 +58,18 @@ export default function App() {
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       const u = session?.user;
+
       if (u) {
         setUser({
           name: (u.user_metadata?.name as string) || "Usuário",
           email: u.email || "",
         });
-        setCurrentScreen("dashboard");
+
+        // Se está resetando senha, não pula para dashboard
+        setCurrentScreen((prev) => (prev === "reset-password" ? prev : "dashboard"));
       } else {
         setUser(null);
-        setCurrentScreen("login");
+        setCurrentScreen((prev) => (prev === "reset-password" ? prev : "login"));
       }
     });
 
@@ -60,13 +78,11 @@ export default function App() {
     };
   }, []);
 
-  // ✅ Login REAL (Supabase) - agora retorna mensagem de erro para o Login.tsx exibir
+  // ✅ Login REAL (Supabase) - retorna mensagem de erro para o Login.tsx exibir
   const handleLogin = async (email: string, password: string): Promise<string | null> => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-
     if (!error) return null;
 
-    // Mensagens amigáveis (sem expor texto técnico)
     const msg = (error.message || "").toLowerCase();
 
     if (msg.includes("invalid login credentials")) {
@@ -82,7 +98,25 @@ export default function App() {
     return "Não foi possível entrar agora. Tente novamente.";
   };
 
-  // ✅ Cadastro REAL (Supabase) - mantém o layout do Signup e usa alert como antes
+  // ✅ Login com Google (Supabase OAuth)
+  const handleGoogleLogin = async (): Promise<string | null> => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: window.location.origin,
+      },
+    });
+
+    if (error) {
+      console.error("Erro Google OAuth:", error.message);
+      return "Erro ao iniciar login com Google.";
+    }
+
+    // O Supabase redireciona e o onAuthStateChange resolve após o retorno
+    return null;
+  };
+
+  // ✅ Cadastro REAL (Supabase)
   const handleSignup = async (name: string, email: string, password: string) => {
     const { error } = await supabase.auth.signUp({
       email,
@@ -104,6 +138,12 @@ export default function App() {
     await supabase.auth.signOut();
   };
 
+  // ✅ Ao concluir reset, volta para login e limpa a rota
+  const handleResetDone = () => {
+    window.history.replaceState({}, "", "/");
+    setCurrentScreen("login");
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0a1628] flex items-center justify-center text-white">
@@ -114,9 +154,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0a1628]">
+      {currentScreen === "reset-password" && (
+        <ResetPassword onDone={handleResetDone} />
+      )}
+
       {currentScreen === "login" && (
         <Login
           onLogin={handleLogin}
+          onGoogleLogin={handleGoogleLogin}
           onNavigateToSignup={() => setCurrentScreen("signup")}
         />
       )}

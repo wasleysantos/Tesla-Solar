@@ -1,19 +1,19 @@
 import { useState } from "react";
 import { Mail, Lock } from "lucide-react";
 import logoImage from "figma:asset/86a5dbd476eaf5850e2d574675b5ba3853e32186.png";
-import ifmaImage from "figma:asset/ifma.png";
 
 interface LoginProps {
-  // Agora aceita retornar uma mensagem de erro (string) ou null.
-  // Se o seu onLogin atual retorna void, ainda vai funcionar.
   onLogin: (
     email: string,
     password: string
   ) => Promise<string | null> | string | null | void;
+
+  onGoogleLogin: () => Promise<string | null> | string | null | void;
+
   onNavigateToSignup: () => void;
 }
 
-export function Login({ onLogin, onNavigateToSignup }: LoginProps) {
+export function Login({ onLogin, onGoogleLogin, onNavigateToSignup }: LoginProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -28,16 +28,30 @@ export function Login({ onLogin, onNavigateToSignup }: LoginProps) {
 
     try {
       setLoading(true);
-
       const result = await onLogin(email, password);
 
-      // Se o App.tsx retornar uma string, mostramos o erro
       if (typeof result === "string" && result.trim().length > 0) {
         setErrorMessage(result);
       }
     } catch {
-      // Fallback caso algum erro estoure
       setErrorMessage("Não foi possível entrar agora. Tente novamente.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setErrorMessage("");
+
+    try {
+      setLoading(true);
+      const result = await onGoogleLogin();
+
+      if (typeof result === "string" && result.trim().length > 0) {
+        setErrorMessage(result);
+      }
+    } catch {
+      setErrorMessage("Não foi possível entrar com Google agora. Tente novamente.");
     } finally {
       setLoading(false);
     }
@@ -61,7 +75,7 @@ export function Login({ onLogin, onNavigateToSignup }: LoginProps) {
           <h2 className="text-2xl font-bold text-white mb-2">Bem-vindo</h2>
           <p className="text-gray-400 mb-8">Entre para acessar seu sistema</p>
 
-          {/* Mensagem de erro (forte, fundo vermelho e texto preto) */}
+          {/* Mensagem de erro */}
           {errorMessage && (
             <div className="mb-6 rounded-lg border-2 border-red-900 bg-red-600 px-4 py-3 shadow-lg shadow-red-900/40">
               <p className="text-sm font-bold text-black text-center">
@@ -70,7 +84,7 @@ export function Login({ onLogin, onNavigateToSignup }: LoginProps) {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-2">
             {/* Email Input */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -119,7 +133,10 @@ export function Login({ onLogin, onNavigateToSignup }: LoginProps) {
             <div className="text-right">
               <button
                 type="button"
-                className="text-sm text-green-400 hover:text-green-300 transition-colors"
+                className="text-sm text-green-400 hover:text-green-300 transition-colors disabled:opacity-70"
+                disabled={loading}
+                // força cursor (garantido)
+                style={{ cursor: loading ? "not-allowed" : "pointer" }}
               >
                 Esqueceu a senha?
               </button>
@@ -129,9 +146,58 @@ export function Login({ onLogin, onNavigateToSignup }: LoginProps) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-green-500 hover:bg-green-600 disabled:opacity-70 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-lg transition-colors"
+              className="w-full bg-green-500 hover:bg-green-600 disabled:opacity-70 text-white font-semibold py-3 rounded-lg transition-colors"
+              // força cursor (garantido)
+              style={{ cursor: loading ? "not-allowed" : "pointer" }}
             >
               {loading ? "Entrando..." : "Entrar"}
+            </button>
+
+            {/* ✅ Google abaixo do campo senha (abaixo do botão Entrar) */}
+            <div className="flex items-center gap-3">
+              <div className="h-px bg-gray-700 flex-1" />
+              <span className="text-gray-400 text-sm">ou</span>
+              <div className="h-px bg-gray-700 flex-1" />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleGoogleLogin}
+              disabled={loading}
+              style={{
+                backgroundColor: "#ffffff",
+                color: "#111827",
+                cursor: loading ? "not-allowed" : "pointer", // força cursor
+              }}
+              className="w-full border border-gray-100 hover:bg-gray-100 text-gray-900 font-medium py-3 rounded-lg transition flex items-center justify-center gap-3 shadow-sm disabled:opacity-70"
+            >
+              {/* IMPORTANT: isso impede o SVG de “roubar” o hover/cursor */}
+              <svg
+                className="pointer-events-none"
+                width="18"
+                height="18"
+                viewBox="0 0 48 48"
+                aria-hidden="true"
+              >
+                <path
+                  fill="#FFC107"
+                  d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.2 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.1-.1-2.2-.4-3.5z"
+                />
+                <path
+                  fill="#FF3D00"
+                  d="M6.3 14.7l6.6 4.8C14.7 15.4 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.2 6.1 29.3 4 24 4 16.3 4 9.6 8.3 6.3 14.7z"
+                />
+                <path
+                  fill="#4CAF50"
+                  d="M24 44c5.1 0 9.9-1.9 13.5-5.1l-6.2-5.2C29.4 35.3 26.8 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.4 39.6 16.1 44 24 44z"
+                />
+                <path
+                  fill="#1976D2"
+                  d="M43.6 20.5H42V20H24v8h11.3c-1.0 2.9-3.1 5.2-5.9 6.6l6.2 5.2C39.2 36.4 44 31.0 44 24c0-1.1-.1-2.2-.4-3.5z"
+                />
+              </svg>
+
+              {loading ? "Carregando..." : "Entrar com Google"}
             </button>
           </form>
 
@@ -141,8 +207,9 @@ export function Login({ onLogin, onNavigateToSignup }: LoginProps) {
               Não tem uma conta?{" "}
               <button
                 onClick={onNavigateToSignup}
-                className="text-green-400 hover:text-green-300 font-semibold transition-colors"
+                className="text-green-400 hover:text-green-300 font-semibold transition-colors disabled:opacity-70"
                 disabled={loading}
+                style={{ cursor: loading ? "not-allowed" : "pointer" }}
               >
                 Cadastre-se
               </button>

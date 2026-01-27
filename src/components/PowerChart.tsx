@@ -22,8 +22,8 @@ export function PowerChart() {
             <stop offset="95%" stopColor="#22c55e" stopOpacity={0.1} />
           </linearGradient>
           <linearGradient id="consumptionGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
-            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1} />
+            <stop offset="5%" stopColor="#db1111" stopOpacity={0.8} />
+            <stop offset="95%" stopColor="#db1111" stopOpacity={0.1} />
           </linearGradient>
         </defs>
         <XAxis
@@ -63,7 +63,7 @@ export function PowerChart() {
           type="monotone"
           dataKey="consumption"
           name="Consumo"
-          stroke="#3b82f6"
+          stroke="#db1111"
           strokeWidth={2}
           fillOpacity={1}
           fill="url(#consumptionGradient)"

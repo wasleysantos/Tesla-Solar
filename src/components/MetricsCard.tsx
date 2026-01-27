@@ -2,20 +2,20 @@ interface MetricsCardProps {
   icon: React.ReactNode;
   label: string;
   value: string;
-  color: 'green' | 'blue' | 'yellow';
+  color: 'green' | 'red' | 'yellow';
   valueColor?: 'green';
 }
 
 export function MetricsCard({ icon, label, value, color, valueColor }: MetricsCardProps) {
   const colorClasses = {
     green: 'text-green-400 border-green-500',
-    blue: 'text-blue-400 border-blue-500',
+    blue: 'text-red-400 border-red-500',
     yellow: 'text-yellow-400 border-yellow-500',
   };
 
   const bgColorClasses = {
     green: 'bg-green-500/10',
-    blue: 'bg-blue-500/10',
+    blue: 'bg-red-500/10',
     yellow: 'bg-yellow-500/10',
   };
 
