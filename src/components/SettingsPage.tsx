@@ -97,17 +97,17 @@ export function SettingsPage({ user }: SettingsPageProps) {
         <div className="space-y-3">
           <div className="flex justify-between">
             <span className="text-gray-400">Versão do App</span>
-            <span className="text-white font-semibold">1.0.2</span>
+            <span className="text-white font-semibold">2.0</span>
           </div>
 
           <div className="flex justify-between">
             <span className="text-gray-400">Status</span>
-            <span className="text-green-400 font-semibold">Conectado</span>
+            <span className="text-green-400 font-semibold">Online</span>
           </div>
 
           <div className="flex justify-between">
-            <span className="text-gray-400">Última Sincronização</span>
-            <span className="text-white font-semibold">Agora mesmo</span>
+            <span className="text-gray-400">Banco de dados</span>
+            <span className="text-white font-semibold">Supabase</span>
           </div>
         </div>
       </div>

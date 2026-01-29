@@ -8,7 +8,11 @@ import {
   LogOut,
   Menu,
   X,
+  AlertCircle,
 } from "lucide-react";
+
+import { supabase } from "../lib/supabase";
+
 import { MetricsCard } from "./MetricsCard";
 import { PowerChart } from "./PowerChart";
 import { Generation } from "./Generation";
@@ -22,24 +26,167 @@ interface DashboardProps {
   onLogout: () => void;
 }
 
-type Screen =
-  | "dashboard"
-  | "generation"
-  | "consumption"
-  | "historic"
-  | "settings";
+type Screen = "dashboard" | "generation" | "consumption" | "historic" | "settings";
 
 export function Dashboard({ user, onLogout }: DashboardProps) {
   const [currentScreen, setCurrentScreen] = useState<Screen>("dashboard");
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // Relógio
   const [now, setNow] = useState(() => new Date());
 
+  const [targetCPF, setTargetCPF] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [inputError, setInputError] = useState(false);
+
+  // ✅ CPF não encontrado
+  const [cpfNotFound, setCpfNotFound] = useState(false);
+
+  // ✅ Nome da pessoa pelo CPF
+  const [personName, setPersonName] = useState<string>("");
+  const [nameNotFound, setNameNotFound] = useState(false);
+  const [loadingName, setLoadingName] = useState(false);
+
+  const [realData, setRealData] = useState({
+    voltage: 0,
+    current: 0,
+    power: 0,
+    status: "Offline" as "Online" | "Offline",
+  });
+
+  const maskCPF = (value: string) => {
+    return value
+      .replace(/\D/g, "")
+      .replace(/(\d{3})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d{1,2})/, "$1-$2")
+      .replace(/(-\d{2})\d+?$/, "$1");
+  };
+
+  const handleFilter = () => {
+    if (searchInput.length < 14) {
+      setInputError(true);
+      return;
+    }
+    setInputError(false);
+
+    setCpfNotFound(false);
+    setNameNotFound(false);
+    setPersonName("");
+
+    setTargetCPF(searchInput);
+  };
+
+  // ✅ Busca o último registro do CPF selecionado
+  const fetchLatestData = async () => {
+    if (!targetCPF) return;
+
+    const { data, error } = await supabase
+      .from("measurements")
+      .select("*")
+      .eq("user_cpf", targetCPF)
+      .order("timestamp", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error || !data) {
+      setRealData({ voltage: 0, current: 0, power: 0, status: "Offline" });
+      setCpfNotFound(true);
+      return;
+    }
+
+    const netPower =
+      (data.solar_generation || 0) - (data.house_consumption || 0);
+
+    setRealData({
+      voltage: data.voltage || 0,
+      current: data.current || 0,
+      power: Number(netPower.toFixed(2)),
+      status: "Online",
+    });
+
+    setCpfNotFound(false);
+  };
+
+  // ✅ Busca o nome da pessoa pelo CPF (na sua tabela name/cpf)
+  const fetchPersonName = async () => {
+    if (!targetCPF) return;
+
+    setLoadingName(true);
+
+    const { data, error } = await supabase
+      .from("customers") // 🔁 TROQUE para o nome real da sua tabela (a da imagem)
+      .select("name")
+      .eq("cpf", targetCPF)
+      .limit(1)
+      .single();
+
+    if (error || !data) {
+      setPersonName("");
+      setNameNotFound(true);
+      setLoadingName(false);
+      return;
+    }
+
+    setPersonName(data.name || "");
+    setNameNotFound(false);
+    setLoadingName(false);
+  };
+
+  // ✅ Relógio
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  // ✅ Supabase: buscar + assinar realtime
+  useEffect(() => {
+    let subscription: any = null;
+
+    // sempre busca quando mudar o targetCPF
+    fetchLatestData();
+    fetchPersonName();
+
+    if (targetCPF) {
+      subscription = supabase
+        .channel("realtime-tesla")
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "measurements",
+            filter: `user_cpf=eq.${targetCPF}`,
+          },
+          (payload) => {
+            const netPower =
+              (payload.new.solar_generation || 0) -
+              (payload.new.house_consumption || 0);
+
+            setRealData({
+              voltage: payload.new.voltage || 0,
+              current: payload.new.current || 0,
+              power: Number(netPower.toFixed(2)),
+              status: "Online",
+            });
+
+            setCpfNotFound(false);
+          }
+        )
+        .subscribe();
+    } else {
+      setRealData({ voltage: 0, current: 0, power: 0, status: "Offline" });
+      setCpfNotFound(false);
+
+      setPersonName("");
+      setNameNotFound(false);
+      setLoadingName(false);
+    }
+
+    return () => {
+      if (subscription) supabase.removeChannel(subscription);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetCPF]);
 
   const timeText = useMemo(() => {
     return new Intl.DateTimeFormat("pt-BR", {
@@ -61,32 +208,90 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   const renderScreen = () => {
     switch (currentScreen) {
       case "generation":
-        return <Generation />;
+        return <Generation cpf={targetCPF} />;
       case "consumption":
-        return <Consumption />;
+        return <Consumption cpf={targetCPF} />;
       case "historic":
-        return <Historic />;
+        return <Historic cpf={targetCPF} />;
       case "settings":
         return <SettingsPage user={user} />;
       default:
         return (
           <>
-            {/* Usuário + Relógio */}
+            {/* ✅ Filtro CPF */}
+            <div className="mb-4">
+              <div className="flex gap-3 items-center justify-center">
+                <div className="w-56 sm:w-72">
+                  <input
+                    type="text"
+                    placeholder="000.000.000-00"
+                    className={`w-full bg-[#1a2942] border rounded-xl py-3 px-4 text-white text-sm text-center outline-none transition-all ${
+                      inputError
+                        ? "border-red-500 ring-1 ring-red-500"
+                        : "border-gray-700 focus:border-green-500"
+                    }`}
+                    value={searchInput}
+                    onChange={(e) => {
+                      setSearchInput(maskCPF(e.target.value));
+                      setInputError(false);
+                      setCpfNotFound(false);
+                      setNameNotFound(false);
+                      setPersonName("");
+                    }}
+                  />
+                </div>
+
+                <button
+                  onClick={handleFilter}
+                  className="bg-green-500 hover:bg-green-600 text-[#0a1628] px-4 rounded-xl font-bold text-sm transition-all active:scale-95 py-3"
+                >
+                  FILTRAR
+                </button>
+              </div>
+
+              {/* inválido/incompleto */}
+              {inputError && (
+                <div className="flex items-center gap-1 mt-2 text-yellow-400 text-[10px] font-bold uppercase tracking-wider ml-2">
+                  <AlertCircle className="w-3 h-3" />
+                  CPF incompleto
+                </div>
+              )}
+
+              {/* CPF não encontrado (na measurements) */}
+              {!inputError && cpfNotFound && targetCPF && (
+                <div className="flex items-center gap-1 mt-2 text-yellow-400 text-[10px] font-bold uppercase tracking-wider ml-2">
+                  <AlertCircle className="w-3 h-3" />
+                  CPF não encontrado
+                </div>
+              )}
+            </div>
+
+            {/* CPF + NOME + Relógio */}
             <div className="mb-3 flex items-center justify-between">
               <div className="text-left">
-                <div className="text-xs text-gray-400">Olá,</div>
-                <div className="text-sm font-semibold text-white">
-                  {user.name}
+                <div className="text-xs text-gray-400">Monitorando por CPF:</div>
+
+                <div className="text-sm font-semibold text-green-400">
+                  {targetCPF || "Aguardando CPF..."}
                 </div>
+
+                {/* ✅ Nome abaixo do CPF */}
+                {targetCPF && (
+                  <div className="text-xs text-gray-300 mt-0.5">
+                    {loadingName
+                      ? "Carregando nome..."
+                      : personName
+                        ? personName
+                        : nameNotFound
+                          ? "Nome não encontrado"
+                          : ""}
+                  </div>
+                )}
               </div>
 
               <div className="text-right text-gray-300">
-                <div className="text-xl font-bold leading-tight">
-                  {timeText}
-                </div>
-                <div className="text-xs text-gray-400 capitalize">
-                  {dateText}
-                </div>
+                <div className="text-xl font-bold leading-tight">{timeText}</div>
+                <div className="text-xs text-gray-400 capitalize">{dateText}</div>
               </div>
             </div>
 
@@ -94,53 +299,41 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
             <div className="grid grid-cols-2 gap-2 mb-4">
               <MetricsCard
                 icon={<Sun className="w-4 h-4" />}
-                label="Geração"
-                value="5.2 kW"
+                label="Tensão"
+                value={`${realData.voltage} V`}
                 color="green"
               />
               <MetricsCard
                 icon={<Zap className="w-4 h-4" />}
-                label="Consumo"
-                value="3.8 kW"
+                label="Saldo (P)"
+                value={`${realData.power} kW`}
                 color="blue"
               />
               <MetricsCard
                 icon={<Activity className="w-4 h-4" />}
-                label="Temp. Inversor"
-                value="42°C"
+                label="Corrente"
+                value={`${realData.current} A`}
                 color="yellow"
               />
               <MetricsCard
-                icon={
-                  <svg
-                    className="w-4 h-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                    <polyline points="22 4 12 14.01 9 11.01" />
-                  </svg>
-                }
+                icon={<Activity className="w-4 h-4" />}
                 label="Status"
-                value="Online"
-                color="green"
-                valueColor="green"
+                value={realData.status}
+                color={realData.status === "Online" ? "green" : "red"}
+                valueColor={realData.status === "Online" ? "green" : "red"}
               />
             </div>
 
             {/* Chart */}
             <div className="bg-[#1a2942] rounded-2xl p-4 mb-6">
               <h3 className="text-white font-semibold mb-2 text-sm">
-                Geração ao Longo do Tempo
+                Carga Atual
               </h3>
               <div className="h-20">
                 <PowerChart />
               </div>
             </div>
 
-            {/* Botão */}
             <button className="w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-4 rounded-xl transition-colors">
               DESLIGAR SISTEMA
             </button>
@@ -151,7 +344,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
   return (
     <div className="min-h-screen bg-[#0a1628] pb-20">
-      {/* Header */}
       <header className="bg-[#1a2942] px-4 py-4 flex items-center justify-between sticky top-0 z-50">
         <button
           onClick={() => setMenuOpen(!menuOpen)}
@@ -160,7 +352,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
           {menuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </button>
 
-        {/* LOGO CLICÁVEL → VOLTA PARA DASHBOARD */}
         <button
           type="button"
           onClick={() => {
@@ -182,7 +373,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         </div>
       </header>
 
-      {/* Side Menu */}
       {menuOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50"
@@ -285,7 +475,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         </div>
       )}
 
-      {/* Content */}
       <main className="p-4">{renderScreen()}</main>
     </div>
   );

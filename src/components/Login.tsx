@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Mail, Lock } from "lucide-react";
 import logoImage from "figma:asset/86a5dbd476eaf5850e2d574675b5ba3853e32186.png";
+import { ShieldCheck } from "lucide-react";
+
 
 interface LoginProps {
   onLogin: (
@@ -58,22 +60,23 @@ export function Login({ onLogin, onGoogleLogin, onNavigateToSignup }: LoginProps
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6">
+   <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#0a1628]">
       <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="flex flex-col items-center justify-center mb-12">
-          <img src={logoImage} alt="Logo" className="h-16 mb-3 object-contain" />
-          <div className="text-center">
-            <p className="text-green-400 font-bold text-lg tracking-[0.2em] uppercase bg-gradient-to-r from-green-400 to-emerald-300 bg-clip-text text-transparent">
-              Multimedidor Fotovoltaico
-            </p>
+        {/* Logo e Badge de ADM */}
+        <div className="flex flex-col items-center justify-center mb-8">
+          <img src={logoImage} alt="Logo" className="h-16 mb-4 object-contain" />
+          <div className="flex items-center gap-2 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">
+            <ShieldCheck className="w-4 h-4 text-blue-400" />
+            <span className="text-blue-400 text-[10px] font-bold uppercase tracking-widest">
+              Acesso Administrativo
+            </span>
           </div>
         </div>
 
         {/* Login Form */}
         <div className="bg-[#1a2942] rounded-2xl p-8 shadow-xl">
-          <h2 className="text-2xl font-bold text-white mb-2">Bem-vindo</h2>
-          <p className="text-gray-400 mb-8">Entre para acessar seu sistema</p>
+          <h2 className="text-2xl font-bold text-white mb-2">Painel de Gestão</h2>
+          <p className="text-gray-400 mb-8">Entre para monitorar os dispositivos solares.</p>
 
           {/* Mensagem de erro */}
           {errorMessage && (
@@ -88,7 +91,7 @@ export function Login({ onLogin, onGoogleLogin, onNavigateToSignup }: LoginProps
             {/* Email Input */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
-                E-mail
+                E-mail Corporativo
               </label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -100,7 +103,7 @@ export function Login({ onLogin, onGoogleLogin, onNavigateToSignup }: LoginProps
                     setErrorMessage("");
                   }}
                   className="w-full bg-[#0a1628] text-white pl-12 pr-4 py-3 rounded-lg border border-gray-700 focus:border-green-500 focus:outline-none transition-colors"
-                  placeholder="seu@email.com"
+                  placeholder="admin@teslalab.com"
                   required
                   disabled={loading}
                 />
@@ -156,7 +159,7 @@ export function Login({ onLogin, onGoogleLogin, onNavigateToSignup }: LoginProps
             {/* ✅ Google abaixo do campo senha (abaixo do botão Entrar) */}
             <div className="flex items-center gap-3">
               <div className="h-px bg-gray-700 flex-1" />
-              <span className="text-gray-400 text-sm">ou</span>
+              <span className="text-gray-500 text-sm">AUTENTIÇÃO SSO</span>
               <div className="h-px bg-gray-700 flex-1" />
             </div>
 
@@ -204,15 +207,8 @@ export function Login({ onLogin, onGoogleLogin, onNavigateToSignup }: LoginProps
           {/* Sign Up Link */}
           <div className="mt-6 text-center">
             <p className="text-gray-400">
-              Não tem uma conta?{" "}
-              <button
-                onClick={onNavigateToSignup}
-                className="text-green-400 hover:text-green-300 font-semibold transition-colors disabled:opacity-70"
-                disabled={loading}
-                style={{ cursor: loading ? "not-allowed" : "pointer" }}
-              >
-                Cadastre-se
-              </button>
+              Não tem uma conta? Solicitar acesso à TI{" "}
+             
             </p>
           </div>
         </div>
