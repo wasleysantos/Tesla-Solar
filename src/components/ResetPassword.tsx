@@ -41,7 +41,9 @@ export function ResetPassword({ onDone }: { onDone: () => void }) {
     <div className="min-h-screen bg-[#0a1628] flex items-center justify-center p-6">
       <div className="w-full max-w-md bg-[#1a2942] rounded-2xl p-8 shadow-xl">
         <h2 className="text-2xl font-bold text-white mb-2">Nova senha</h2>
-        <p className="text-gray-400 mb-6">Defina uma nova senha para sua conta</p>
+        <p className="text-gray-400 mb-6">
+          Defina uma nova senha para sua conta
+        </p>
 
         {msg && (
           <div className="mb-5 rounded-lg border border-gray-700 bg-[#0a1628] px-4 py-3">
@@ -51,7 +53,9 @@ export function ResetPassword({ onDone }: { onDone: () => void }) {
 
         <form onSubmit={handleUpdate} className="space-y-4">
           <div>
-            <label className="block text-sm text-gray-300 mb-1">Nova senha</label>
+            <label className="block text-sm text-gray-300 mb-1">
+              Nova senha
+            </label>
             <input
               type="password"
               value={password}
@@ -63,7 +67,9 @@ export function ResetPassword({ onDone }: { onDone: () => void }) {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-300 mb-1">Confirmar senha</label>
+            <label className="block text-sm text-gray-300 mb-1">
+              Confirmar senha
+            </label>
             <input
               type="password"
               value={confirm}

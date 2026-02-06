@@ -3,11 +3,10 @@ import { Mail, Lock } from "lucide-react";
 import logoImage from "figma:asset/86a5dbd476eaf5850e2d574675b5ba3853e32186.png";
 import { ShieldCheck } from "lucide-react";
 
-
 interface LoginProps {
   onLogin: (
     email: string,
-    password: string
+    password: string,
   ) => Promise<string | null> | string | null | void;
 
   onGoogleLogin: () => Promise<string | null> | string | null | void;
@@ -15,7 +14,11 @@ interface LoginProps {
   onNavigateToSignup: () => void;
 }
 
-export function Login({ onLogin, onGoogleLogin, onNavigateToSignup }: LoginProps) {
+export function Login({
+  onLogin,
+  onGoogleLogin,
+  onNavigateToSignup,
+}: LoginProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -53,18 +56,24 @@ export function Login({ onLogin, onGoogleLogin, onNavigateToSignup }: LoginProps
         setErrorMessage(result);
       }
     } catch {
-      setErrorMessage("Não foi possível entrar com Google agora. Tente novamente.");
+      setErrorMessage(
+        "Não foi possível entrar com Google agora. Tente novamente.",
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-   <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#0a1628]">
+    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#0a1628]">
       <div className="w-full max-w-md">
         {/* Logo e Badge de ADM */}
         <div className="flex flex-col items-center justify-center mb-8">
-          <img src={logoImage} alt="Logo" className="h-16 mb-4 object-contain" />
+          <img
+            src={logoImage}
+            alt="Logo"
+            className="h-16 mb-4 object-contain"
+          />
           <div className="flex items-center gap-2 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">
             <ShieldCheck className="w-4 h-4 text-blue-400" />
             <span className="text-blue-400 text-[10px] font-bold uppercase tracking-widest">
@@ -75,8 +84,12 @@ export function Login({ onLogin, onGoogleLogin, onNavigateToSignup }: LoginProps
 
         {/* Login Form */}
         <div className="bg-[#1a2942] rounded-2xl p-8 shadow-xl">
-          <h2 className="text-2xl font-bold text-white mb-2">Painel de Gestão</h2>
-          <p className="text-gray-400 mb-8">Entre para monitorar os dispositivos solares.</p>
+          <h2 className="text-2xl font-bold text-white mb-2">
+            Painel de Gestão
+          </h2>
+          <p className="text-gray-400 mb-8">
+            Entre para monitorar os dispositivos solares.
+          </p>
 
           {/* Mensagem de erro */}
           {errorMessage && (
@@ -208,7 +221,6 @@ export function Login({ onLogin, onGoogleLogin, onNavigateToSignup }: LoginProps
           <div className="mt-6 text-center">
             <p className="text-gray-400">
               Não tem uma conta? Solicitar acesso à TI{" "}
-             
             </p>
           </div>
         </div>

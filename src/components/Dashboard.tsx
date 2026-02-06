@@ -26,7 +26,34 @@ interface DashboardProps {
   onLogout: () => void;
 }
 
-type Screen = "dashboard" | "generation" | "consumption" | "historic" | "settings";
+type Screen =
+  | "dashboard"
+  | "generation"
+  | "consumption"
+  | "historic"
+  | "settings";
+
+const normalizeCpf = (value: string) =>
+  (value || "").replace(/\D/g, "").slice(0, 11);
+
+const maskCPF = (value: string) => {
+  const v = normalizeCpf(value);
+  const p1 = v.slice(0, 3);
+  const p2 = v.slice(3, 6);
+  const p3 = v.slice(6, 9);
+  const p4 = v.slice(9, 11);
+
+  let out = p1;
+  if (p2) out += `.${p2}`;
+  if (p3) out += `.${p3}`;
+  if (p4) out += `-${p4}`;
+  return out;
+};
+
+const toNum = (v: any) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
 
 export function Dashboard({ user, onLogout }: DashboardProps) {
   const [currentScreen, setCurrentScreen] = useState<Screen>("dashboard");
@@ -34,14 +61,19 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
   const [now, setNow] = useState(() => new Date());
 
+  // ✅ CPF do filtro SEMPRE limpo (11 dígitos)
   const [targetCPF, setTargetCPF] = useState("");
+
+  // ✅ input do usuário (mascarado)
   const [searchInput, setSearchInput] = useState("");
   const [inputError, setInputError] = useState(false);
 
-  // ✅ CPF não encontrado
+  // ✅ sem dados (realmente não encontrou measurement)
   const [cpfNotFound, setCpfNotFound] = useState(false);
 
-  // ✅ Nome da pessoa pelo CPF
+  // ✅ erro real de banco (400 / RLS / etc)
+  const [dbError, setDbError] = useState("");
+
   const [personName, setPersonName] = useState<string>("");
   const [nameNotFound, setNameNotFound] = useState(false);
   const [loadingName, setLoadingName] = useState(false);
@@ -53,53 +85,81 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     status: "Offline" as "Online" | "Offline",
   });
 
-  const maskCPF = (value: string) => {
-    return value
-      .replace(/\D/g, "")
-      .replace(/(\d{3})(\d)/, "$1.$2")
-      .replace(/(\d{3})(\d)/, "$1.$2")
-      .replace(/(\d{3})(\d{1,2})/, "$1-$2")
-      .replace(/(-\d{2})\d+?$/, "$1");
-  };
-
   const handleFilter = () => {
-    if (searchInput.length < 14) {
+    const cpfDigits = normalizeCpf(searchInput);
+
+    if (cpfDigits.length !== 11) {
       setInputError(true);
       return;
     }
-    setInputError(false);
 
+    setInputError(false);
     setCpfNotFound(false);
+    setDbError("");
     setNameNotFound(false);
     setPersonName("");
 
-    setTargetCPF(searchInput);
+    setTargetCPF(cpfDigits);
   };
 
-  // ✅ Busca o último registro do CPF selecionado
+  useEffect(() => {
+    const cpfDigits = normalizeCpf(searchInput);
+
+    // só dispara quando tiver 11 dígitos
+    if (cpfDigits.length === 11) {
+      setInputError(false);
+      setCpfNotFound(false);
+      setDbError("");
+      setNameNotFound(false);
+      setPersonName("");
+      setTargetCPF(cpfDigits);
+    }
+  }, [searchInput]);
+
+  // ✅ Busca a última medição (corrige o 400 usando ORDER BY id)
   const fetchLatestData = async () => {
     if (!targetCPF) return;
+
+    setDbError("");
 
     const { data, error } = await supabase
       .from("measurements")
       .select("*")
       .eq("user_cpf", targetCPF)
-      .order("timestamp", { ascending: false })
-      .limit(1)
-      .single();
+      .order("id", { ascending: false }) // ✅ MAIS SEGURO: evita erro com colunas de data
+      .limit(1);
 
-    if (error || !data) {
+    if (error) {
+      console.error("Erro measurements:", {
+        message: error.message,
+        details: (error as any).details,
+        hint: (error as any).hint,
+        code: (error as any).code,
+        targetCPF,
+      });
+      setDbError(error.message || "Erro ao consultar measurements");
+      setCpfNotFound(false);
+      setRealData({ voltage: 0, current: 0, power: 0, status: "Offline" });
+      return;
+    }
+
+    if (!data || data.length === 0) {
       setRealData({ voltage: 0, current: 0, power: 0, status: "Offline" });
       setCpfNotFound(true);
       return;
     }
 
-    const netPower =
-      (data.solar_generation || 0) - (data.house_consumption || 0);
+    const row: any = data[0];
+
+    const voltage = toNum(row.voltage);
+    const current = toNum(row.current);
+    const solarGen = toNum(row.solar_generation);
+    const houseCons = toNum(row.house_consumption);
+    const netPower = solarGen - houseCons;
 
     setRealData({
-      voltage: data.voltage || 0,
-      current: data.current || 0,
+      voltage,
+      current,
       power: Number(netPower.toFixed(2)),
       status: "Online",
     });
@@ -107,27 +167,40 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     setCpfNotFound(false);
   };
 
-  // ✅ Busca o nome da pessoa pelo CPF (na sua tabela name/cpf)
+  // ✅ Busca nome pelo CPF (customers)
   const fetchPersonName = async () => {
     if (!targetCPF) return;
 
     setLoadingName(true);
 
     const { data, error } = await supabase
-      .from("customers") // 🔁 TROQUE para o nome real da sua tabela (a da imagem)
+      .from("customers")
       .select("name")
       .eq("cpf", targetCPF)
-      .limit(1)
-      .single();
+      .limit(1);
 
-    if (error || !data) {
+    if (error) {
+      console.error("Erro customers:", {
+        message: error.message,
+        details: (error as any).details,
+        hint: (error as any).hint,
+        code: (error as any).code,
+        targetCPF,
+      });
+      setPersonName("");
+      setNameNotFound(false);
+      setLoadingName(false);
+      return;
+    }
+
+    if (!data || data.length === 0) {
       setPersonName("");
       setNameNotFound(true);
       setLoadingName(false);
       return;
     }
 
-    setPersonName(data.name || "");
+    setPersonName(data[0]?.name || "");
     setNameNotFound(false);
     setLoadingName(false);
   };
@@ -138,53 +211,65 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     return () => window.clearInterval(id);
   }, []);
 
-  // ✅ Supabase: buscar + assinar realtime
+  // ✅ Buscar + Realtime
   useEffect(() => {
     let subscription: any = null;
-
-    // sempre busca quando mudar o targetCPF
-    fetchLatestData();
-    fetchPersonName();
+    let pollId: number | null = null;
 
     if (targetCPF) {
+      // 🔹 primeira carga imediata
+      fetchLatestData();
+      fetchPersonName();
+
+      // 🔹 polling fallback (a cada 5 segundos)
+      pollId = window.setInterval(() => {
+        fetchLatestData();
+      }, 5000);
+
+      // 🔹 realtime (INSERT + UPDATE)
       subscription = supabase
-        .channel("realtime-tesla")
+        .channel(`realtime-measurements-${targetCPF}`) // canal único por CPF
         .on(
           "postgres_changes",
           {
-            event: "INSERT",
+            event: "*", // INSERT + UPDATE
             schema: "public",
             table: "measurements",
             filter: `user_cpf=eq.${targetCPF}`,
           },
           (payload) => {
-            const netPower =
-              (payload.new.solar_generation || 0) -
-              (payload.new.house_consumption || 0);
+            const solarGen = toNum(payload.new.solar_generation);
+            const houseCons = toNum(payload.new.house_consumption);
+            const netPower = solarGen - houseCons;
 
             setRealData({
-              voltage: payload.new.voltage || 0,
-              current: payload.new.current || 0,
+              voltage: toNum(payload.new.voltage),
+              current: toNum(payload.new.current),
               power: Number(netPower.toFixed(2)),
               status: "Online",
             });
 
             setCpfNotFound(false);
-          }
+            setDbError("");
+          },
         )
         .subscribe();
     } else {
+      // reset quando não há CPF
       setRealData({ voltage: 0, current: 0, power: 0, status: "Offline" });
       setCpfNotFound(false);
-
+      setDbError("");
       setPersonName("");
       setNameNotFound(false);
       setLoadingName(false);
     }
 
+    // 🔹 limpeza correta
     return () => {
       if (subscription) supabase.removeChannel(subscription);
+      if (pollId) window.clearInterval(pollId);
     };
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetCPF]);
 
@@ -214,11 +299,24 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       case "historic":
         return <Historic cpf={targetCPF} />;
       case "settings":
-        return <SettingsPage user={user} />;
+        return (
+          <SettingsPage
+            user={user}
+            onSelectCpf={(cpf) => {
+              const clean = normalizeCpf(cpf);
+              setSearchInput(maskCPF(clean));
+              setInputError(false);
+              setCpfNotFound(false);
+              setDbError("");
+              setTargetCPF(clean);
+            }}
+          />
+        );
+
       default:
         return (
           <>
-            {/* ✅ Filtro CPF */}
+            {/* Filtro CPF */}
             <div className="mb-4">
               <div className="flex gap-3 items-center justify-center">
                 <div className="w-56 sm:w-72">
@@ -235,6 +333,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                       setSearchInput(maskCPF(e.target.value));
                       setInputError(false);
                       setCpfNotFound(false);
+                      setDbError("");
                       setNameNotFound(false);
                       setPersonName("");
                     }}
@@ -245,11 +344,10 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                   onClick={handleFilter}
                   className="bg-green-500 hover:bg-green-600 text-[#0a1628] px-4 rounded-xl font-bold text-sm transition-all active:scale-95 py-3"
                 >
-                  FILTRAR
+                  BUSCAR
                 </button>
               </div>
 
-              {/* inválido/incompleto */}
               {inputError && (
                 <div className="flex items-center gap-1 mt-2 text-yellow-400 text-[10px] font-bold uppercase tracking-wider ml-2">
                   <AlertCircle className="w-3 h-3" />
@@ -257,25 +355,30 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                 </div>
               )}
 
-              {/* CPF não encontrado (na measurements) */}
-              {!inputError && cpfNotFound && targetCPF && (
-                <div className="flex items-center gap-1 mt-2 text-yellow-400 text-[10px] font-bold uppercase tracking-wider ml-2">
+              {/* erro real do banco */}
+              {!inputError && dbError && targetCPF && (
+                <div className="flex items-center gap-1 mt-2 text-red-400 text-[10px] font-bold uppercase tracking-wider ml-2">
                   <AlertCircle className="w-3 h-3" />
-                  CPF não encontrado
+                  Erro ao consultar o banco: {dbError}
                 </div>
+              )}
+
+              {/* sem dados */}
+              {!inputError && !dbError && cpfNotFound && targetCPF && (
+                <div className="flex items-center gap-1 mt-2 text-yellow-400 text-[10px] font-bold uppercase tracking-wider ml-2"></div>
               )}
             </div>
 
-            {/* CPF + NOME + Relógio */}
+            {/* CPF + Nome + Relógio */}
             <div className="mb-3 flex items-center justify-between">
               <div className="text-left">
-                <div className="text-xs text-gray-400">Monitorando por CPF:</div>
-
+                <div className="text-xs text-gray-400">
+                  Monitorando por CPF:
+                </div>
                 <div className="text-sm font-semibold text-green-400">
-                  {targetCPF || "Aguardando CPF..."}
+                  {targetCPF ? maskCPF(targetCPF) : "Aguardando CPF..."}
                 </div>
 
-                {/* ✅ Nome abaixo do CPF */}
                 {targetCPF && (
                   <div className="text-xs text-gray-300 mt-0.5">
                     {loadingName
@@ -283,19 +386,23 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                       : personName
                         ? personName
                         : nameNotFound
-                          ? "Nome não encontrado"
+                          ? "CPF não encontrado"
                           : ""}
                   </div>
                 )}
               </div>
 
               <div className="text-right text-gray-300">
-                <div className="text-xl font-bold leading-tight">{timeText}</div>
-                <div className="text-xs text-gray-400 capitalize">{dateText}</div>
+                <div className="text-xl font-bold leading-tight">
+                  {timeText}
+                </div>
+                <div className="text-xs text-gray-400 capitalize">
+                  {dateText}
+                </div>
               </div>
             </div>
 
-            {/* Metrics Cards */}
+            {/* Cards */}
             <div className="grid grid-cols-2 gap-2 mb-4">
               <MetricsCard
                 icon={<Sun className="w-4 h-4" />}
@@ -330,7 +437,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                 Carga Atual
               </h3>
               <div className="h-20">
-                <PowerChart />
+                <PowerChart cpf={targetCPF} />
               </div>
             </div>
 
