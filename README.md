@@ -150,4 +150,6 @@ O layout foi projetado para funcionar perfeitamente em:
 
 📚 Projeto desenvolvido para fins acadêmicos no **Instituto Federal do Maranhão (IFMA)**, em parceria com a **Tesla Energia Solar**.
 
+![WhatsApp Image 2026-02-07 at 20 00 25](https://github.com/user-attachments/assets/3d7c8f84-f69e-45c8-ae94-ef4ebe7ceaf6)
+
 
