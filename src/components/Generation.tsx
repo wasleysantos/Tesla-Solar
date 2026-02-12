@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { Sun, User } from "lucide-react";
+import { Sun, User, AlertCircle } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -14,68 +14,292 @@ interface GenerationProps {
   cpf: string; // (já vem limpo do Dashboard)
 }
 
+type Row = {
+  id?: number;
+  timestamp: string;
+  solar_generation: any; // W
+};
+
+const toNum = (v: any) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const tsToMs = (ts: string) => {
+  const ms = new Date(ts).getTime();
+  return Number.isFinite(ms) ? ms : NaN;
+};
+
+const wToKw = (w: number) => w / 1000;
+
+// eixo curto: DD/MM HH:MM
+function fmtAxis(ts: string) {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "--/-- --:--";
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(d);
+}
+
+// tooltip completo: DD/MM/AAAA HH:MM:SS
+function fmtTooltip(ts: string) {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return "Data inválida";
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(d);
+}
+
+// integra potência (W) => kWh pelo método do trapézio
+function integrateKwh(rowsAsc: { timestamp: string; solar_generation: any }[]) {
+  if (!rowsAsc || rowsAsc.length < 2) return 0;
+
+  let kwh = 0;
+  for (let i = 1; i < rowsAsc.length; i++) {
+    const a = rowsAsc[i - 1];
+    const b = rowsAsc[i];
+
+    const t0 = tsToMs(a.timestamp);
+    const t1 = tsToMs(b.timestamp);
+    if (!Number.isFinite(t0) || !Number.isFinite(t1)) continue;
+
+    const dtHours = Math.max(0, (t1 - t0) / 3600000);
+
+    const p0w = Math.max(0, toNum(a.solar_generation));
+    const p1w = Math.max(0, toNum(b.solar_generation));
+
+    const pAvgKw = (p0w + p1w) / 2 / 1000;
+    kwh += pAvgKw * dtHours;
+  }
+  return kwh;
+}
+
 export function Generation({ cpf }: GenerationProps) {
-  const [currentGen, setCurrentGen] = useState(0);
-  const [chartData, setChartData] = useState<any[]>([]);
+  const [currentW, setCurrentW] = useState(0); // potência atual (W)
+  const [todayKwh, setTodayKwh] = useState(0); // geração do dia (kWh)
+  const [chartRows, setChartRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState("");
 
+  // nome do cliente
+  const [personName, setPersonName] = useState("");
+  const [loadingName, setLoadingName] = useState(false);
+
+  // ref do cpf pra callbacks
+  const cpfRef = useRef(cpf);
   useEffect(() => {
-    const fetchGeneration = async () => {
-      if (!cpf) {
-        setLoading(false);
-        setDbError("");
-        setChartData([]);
-        setCurrentGen(0);
-        return;
-      }
-
-      setLoading(true);
-      setDbError("");
-
-      const { data, error } = await supabase
-        .from("measurements")
-        .select("timestamp, solar_generation")
-        .eq("user_cpf", cpf)
-        // ✅ pega as últimas 7 leituras (mais recentes)
-        .order("timestamp", { ascending: false })
-        .limit(7);
-
-      if (error) {
-        console.error("Generation measurements error:", error);
-        setDbError(error.message || "Erro ao consultar measurements");
-        setChartData([]);
-        setCurrentGen(0);
-        setLoading(false);
-        return;
-      }
-
-      if (data && data.length > 0) {
-        // ✅ como veio DESC, inverte para o gráfico ficar no tempo crescente
-        const ordered = [...data].reverse();
-
-        const formatted = ordered.map((d: any) => ({
-          time: new Date(d.timestamp).toLocaleTimeString("pt-BR", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-          value: Number(d.solar_generation) || 0,
-        }));
-
-        setChartData(formatted);
-
-        // ✅ "atual" é o último item do array crescente
-        setCurrentGen(formatted[formatted.length - 1]?.value || 0);
-      } else {
-        setChartData([]);
-        setCurrentGen(0);
-      }
-
-      setLoading(false);
-    };
-
-    fetchGeneration();
+    cpfRef.current = cpf;
   }, [cpf]);
+
+  const fetchPersonName = async () => {
+    if (!cpf) return;
+    setLoadingName(true);
+
+    const { data, error } = await supabase
+      .from("customers")
+      .select("name")
+      .eq("cpf", cpf)
+      .limit(1);
+
+    if (!error && data && data.length > 0) {
+      setPersonName(data[0]?.name || "");
+    } else {
+      setPersonName("");
+    }
+
+    setLoadingName(false);
+  };
+
+  const fetchGeneration = async () => {
+    if (!cpf) {
+      setLoading(false);
+      setDbError("");
+      setChartRows([]);
+      setCurrentW(0);
+      setTodayKwh(0);
+      return;
+    }
+
+    setLoading(true);
+    setDbError("");
+
+    // últimas leituras (para gráfico)
+    const { data, error } = await supabase
+      .from("measurements")
+      .select("id,timestamp,solar_generation")
+      .eq("user_cpf", cpf)
+      .order("timestamp", { ascending: false })
+      .limit(24); // mais pontos deixa o gráfico mais “real”
+
+    if (error) {
+      console.error("Generation measurements error:", error);
+      setDbError(error.message || "Erro ao consultar measurements");
+      setChartRows([]);
+      setCurrentW(0);
+      setTodayKwh(0);
+      setLoading(false);
+      return;
+    }
+
+    const rows = (data as Row[]) || [];
+
+    if (rows.length > 0) {
+      const newest = rows[0];
+      setCurrentW(toNum(newest.solar_generation));
+      // gráfico em ordem crescente
+      const asc = [...rows]
+        .filter((r) => Number.isFinite(tsToMs(r.timestamp)))
+        .sort((a, b) => tsToMs(a.timestamp) - tsToMs(b.timestamp));
+      setChartRows(asc);
+    } else {
+      setChartRows([]);
+      setCurrentW(0);
+    }
+
+    setLoading(false);
+  };
+
+  const fetchTodayKwh = async () => {
+    if (!cpf) return;
+
+    // início do dia local
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+
+    const { data, error } = await supabase
+      .from("measurements")
+      .select("timestamp,solar_generation")
+      .eq("user_cpf", cpf)
+      .gte("timestamp", start.toISOString())
+      .order("timestamp", { ascending: true })
+      .limit(5000);
+
+    if (error) {
+      console.error("fetchTodayKwh error:", error);
+      // não “derruba” a tela por causa disso
+      return;
+    }
+
+    const rows = (data || []) as { timestamp: string; solar_generation: any }[];
+    const kwh = integrateKwh(rows);
+    setTodayKwh(Number(kwh.toFixed(3)));
+  };
+
+  // primeira carga + mudança de CPF
+  useEffect(() => {
+    let pollId: number | null = null;
+    let kwhPollId: number | null = null;
+    let sub: any = null;
+
+    if (!cpf) {
+      setLoading(false);
+      setChartRows([]);
+      setCurrentW(0);
+      setTodayKwh(0);
+      setDbError("");
+      setPersonName("");
+      return;
+    }
+
+    fetchPersonName();
+    fetchGeneration();
+    fetchTodayKwh();
+
+    // kWh do dia (mais leve)
+    kwhPollId = window.setInterval(() => {
+      fetchTodayKwh();
+    }, 30000);
+
+    // realtime
+    sub = supabase
+      .channel(`realtime-generation-${cpf}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "measurements",
+          filter: `user_cpf=eq.${cpf}`,
+        },
+        (payload: any) => {
+          const n: Row | null = payload?.new ?? null;
+          if (!n?.timestamp) return;
+
+          // potência atual
+          setCurrentW(toNum(n.solar_generation));
+          setDbError("");
+
+          // mantém lista pequena e ordenada
+          setChartRows((prev) => {
+            const map = new Map<number, Row>();
+            for (const r of prev) {
+              if (r.id != null) map.set(r.id, r);
+            }
+            if (n.id != null) map.set(n.id, n);
+
+            const arr = Array.from(map.values())
+              .filter((r) => Number.isFinite(tsToMs(r.timestamp)))
+              .sort((a, b) => tsToMs(a.timestamp) - tsToMs(b.timestamp));
+
+            // limita a 30 pontos
+            return arr.length > 30 ? arr.slice(arr.length - 30) : arr;
+          });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      if (pollId) window.clearInterval(pollId);
+      if (kwhPollId) window.clearInterval(kwhPollId);
+      if (sub) supabase.removeChannel(sub);
+    };
+  }, [cpf]);
+
+  const chartData = useMemo(() => {
+    if (!chartRows.length) return [];
+    return chartRows.map((r) => ({
+      ts: r.timestamp,
+      label: fmtAxis(r.timestamp),
+      // valor em kW no gráfico
+      value: Number(wToKw(toNum(r.solar_generation)).toFixed(3)),
+    }));
+  }, [chartRows]);
+
+  if (!cpf) {
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-col mb-6">
+          <h2 className="text-2xl font-bold text-white">Geração de Energia</h2>
+          <div className="flex items-center gap-2 text-green-400 text-xs mt-1">
+            <User className="w-3 h-3" />
+            <span>Cliente: Aguardando seleção...</span>
+          </div>
+        </div>
+
+        <div className="bg-[#1a2942] rounded-2xl p-10 text-center border border-dashed border-gray-700">
+          <p className="text-gray-500 text-sm">
+            Insira o CPF no painel principal para carregar os dados solares.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="p-8 text-center text-white animate-pulse">
+        Consultando banco de dados...
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -84,82 +308,99 @@ export function Generation({ cpf }: GenerationProps) {
 
         <div className="flex items-center gap-2 text-green-400 text-xs mt-1">
           <User className="w-3 h-3" />
-          <span>Cliente: {cpf || "Aguardando seleção..."}</span>
+          <span>CPF: {cpf}</span>
+        </div>
+
+        <div className="text-xs text-gray-300 mt-1">
+          {loadingName ? "Carregando nome..." : personName ? personName : "—"}
         </div>
 
         {dbError && (
           <div className="flex items-center gap-1 mt-2 text-red-400 text-[10px] font-bold uppercase tracking-wider">
+            <AlertCircle className="w-3 h-3" />
             <span>Erro:</span> {dbError}
           </div>
         )}
       </div>
 
-      {!cpf ? (
-        <div className="bg-[#1a2942] rounded-2xl p-10 text-center border border-dashed border-gray-700">
-          <p className="text-gray-500 text-sm">
-            Insira o CPF no painel principal para carregar os dados solares.
-          </p>
+      {/* Card: Potência atual (kW) */}
+      <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-6 shadow-lg shadow-green-500/20">
+        <div className="flex items-center gap-3 mb-2">
+          <Sun className="w-8 h-8 text-white" />
+          <span className="text-white/80 font-medium">
+            Potência Solar Atual
+          </span>
         </div>
-      ) : loading ? (
-        <div className="p-8 text-center text-white animate-pulse">
-          Consultando banco de dados...
+
+        <p className="text-5xl font-bold text-white mb-1">
+          {wToKw(currentW).toFixed(3)} <span className="text-xl">kW</span>
+        </p>
+        <p className="text-white/80 text-sm">
+          Medida instantânea (não acumulada)
+        </p>
+      </div>
+
+      {/* Card: Geração do dia (kWh) */}
+      <div className="bg-[#1a2942] rounded-2xl p-4 border border-green-500/20">
+        <div className="text-xs text-gray-400">Geração de hoje</div>
+        <div className="text-2xl font-bold text-green-300 mt-1">
+          {todayKwh.toFixed(2)}{" "}
+          <span className="text-xs text-gray-400">kWh</span>
         </div>
-      ) : (
-        <>
-          <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-6 shadow-lg shadow-green-500/20">
-            <div className="flex items-center gap-3 mb-2">
-              <Sun className="w-8 h-8 text-white" />
-              <span className="text-white/80 font-medium">Geração Atual</span>
+        <div className="text-[11px] text-gray-500 mt-1">
+          Calculado pela soma ao longo do tempo usando potência (W) das medições
+          do dia.
+        </div>
+      </div>
+
+      {/* Gráfico */}
+      <div className="bg-[#1a2942] rounded-2xl p-4 border border-gray-800">
+        <h3 className="text-white font-semibold mb-4 text-sm">
+          Potência nas últimas leituras (kW)
+        </h3>
+
+        <div className="h-[220px] w-full">
+          {chartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData}>
+                <XAxis
+                  dataKey="label"
+                  stroke="#64748b"
+                  style={{ fontSize: "10px" }}
+                  interval="preserveStartEnd"
+                />
+                <YAxis stroke="#64748b" style={{ fontSize: "10px" }} />
+                <Tooltip
+                  labelFormatter={(_, payload) => {
+                    const ts = payload?.[0]?.payload?.ts;
+                    return ts
+                      ? `Atualizado em: ${fmtTooltip(ts)}`
+                      : "Atualizado em: --";
+                  }}
+                  formatter={(value: any) => [`${value} kW`, "Potência"]}
+                  contentStyle={{
+                    backgroundColor: "#1a2942",
+                    border: "1px solid #374151",
+                    borderRadius: "8px",
+                    color: "#fff",
+                  }}
+                  itemStyle={{ color: "#22c55e" }}
+                />
+                <Bar
+                  dataKey="value"
+                  fill="#22c55e"
+                  radius={[4, 4, 0, 0]}
+                  barSize={26}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-full text-gray-600 text-sm">
+              Sem dados de geração para este CPF.
             </div>
-
-            <p className="text-5xl font-bold text-white mb-1">
-              {currentGen} kW
-            </p>
-            <p className="text-white/80 text-sm">
-              Produzindo via Painéis Fotovoltaicos
-            </p>
-          </div>
-
-          <div className="bg-[#1a2942] rounded-2xl p-4 border border-gray-800">
-            <h3 className="text-white font-semibold mb-4 text-sm">
-              Produção nas Últimas Leituras
-            </h3>
-
-            <div className="h-[200px] w-full">
-              {chartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData}>
-                    <XAxis
-                      dataKey="time"
-                      stroke="#64748b"
-                      style={{ fontSize: "10px" }}
-                    />
-                    <YAxis stroke="#64748b" style={{ fontSize: "10px" }} />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "#1a2942",
-                        border: "1px solid #374151",
-                        borderRadius: "8px",
-                      }}
-                      itemStyle={{ color: "#22c55e" }}
-                    />
-                    <Bar
-                      dataKey="value"
-                      fill="#22c55e"
-                      radius={[4, 4, 0, 0]}
-                      barSize={30}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-full text-gray-600 text-sm">
-                  Sem dados de geração para este CPF.
-                </div>
-              )}
-            </div>
-          </div>
-        </>
-      )}
+          )}
+        </div>
+      </div>
     </div>
   );
 }

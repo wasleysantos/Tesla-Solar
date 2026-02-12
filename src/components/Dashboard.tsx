@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Sun,
   Zap,
@@ -9,6 +9,10 @@ import {
   Menu,
   X,
   AlertCircle,
+  Plug,
+  PlugZap,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 
 import { supabase } from "../lib/supabase";
@@ -55,6 +59,44 @@ const toNum = (v: any) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+function tsToMs(ts: string) {
+  const ms = new Date(ts).getTime();
+  return Number.isFinite(ms) ? ms : NaN;
+}
+
+// kW (a partir de W)
+function wToKw(w: number) {
+  return w / 1000;
+}
+
+// Integra potência (W) ao longo do tempo => kWh (trapézio)
+function integrateKwhFromRows(
+  rowsAsc: { timestamp: string; solar_generation: any }[],
+) {
+  if (!rowsAsc || rowsAsc.length < 2) return 0;
+
+  let kwh = 0;
+
+  for (let i = 1; i < rowsAsc.length; i++) {
+    const prev = rowsAsc[i - 1];
+    const curr = rowsAsc[i];
+
+    const t0 = tsToMs(prev.timestamp);
+    const t1 = tsToMs(curr.timestamp);
+    if (!Number.isFinite(t0) || !Number.isFinite(t1)) continue;
+
+    const dtHours = Math.max(0, (t1 - t0) / (1000 * 60 * 60));
+
+    const p0w = Math.max(0, toNum(prev.solar_generation)); // W
+    const p1w = Math.max(0, toNum(curr.solar_generation)); // W
+
+    const pAvgKw = (p0w + p1w) / 2 / 1000;
+    kwh += pAvgKw * dtHours;
+  }
+
+  return kwh;
+}
+
 export function Dashboard({ user, onLogout }: DashboardProps) {
   const [currentScreen, setCurrentScreen] = useState<Screen>("dashboard");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -78,12 +120,82 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   const [nameNotFound, setNameNotFound] = useState(false);
   const [loadingName, setLoadingName] = useState(false);
 
+  // ✅ Dados instantâneos (W)
   const [realData, setRealData] = useState({
     voltage: 0,
     current: 0,
-    power: 0,
+    solarW: 0, // geração instantânea (W)
+    consW: 0, // consumo instantâneo (W)
+    netW: 0, // saldo instantâneo (W) = solar - cons
     status: "Offline" as "Online" | "Offline",
   });
+
+  // ✅ Geração acumulada do dia (kWh)
+  const [dailyKwh, setDailyKwh] = useState(0);
+  const [dailyKwhError, setDailyKwhError] = useState("");
+
+  // ==============================
+  // ✅ CONTROLE DO SISTEMA (device_status)
+  // ==============================
+  const DEVICE_ID = "ESP32_PZEM_TESTE";
+
+  // LIGADO=true / DESLIGADO=false
+  const [relayState, setRelayState] = useState<boolean | null>(null);
+  const [relayLoading, setRelayLoading] = useState(false);
+  const [relayError, setRelayError] = useState("");
+
+  const fetchRelayState = async () => {
+    setRelayError("");
+
+    const { data, error } = await supabase
+      .from("device_status")
+      .select("relay_state")
+      .eq("device_id", DEVICE_ID)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Erro device_status:", error);
+      setRelayError(error.message || "Erro ao consultar device_status");
+      setRelayState(null);
+      return;
+    }
+
+    if (!data) {
+      setRelayState(false);
+      return;
+    }
+
+    setRelayState(!!data.relay_state);
+  };
+
+  const toggleSystemPower = async () => {
+    if (relayState === null) return;
+
+    setRelayLoading(true);
+    setRelayError("");
+
+    const prevState = relayState;
+    const nextState = !relayState;
+
+    setRelayState(nextState);
+
+    const { error } = await supabase.from("device_status").upsert(
+      {
+        device_id: DEVICE_ID,
+        relay_state: nextState,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "device_id" },
+    );
+
+    if (error) {
+      console.error("❌ Erro toggleSystemPower:", error);
+      setRelayError(error.message || "Erro ao atualizar estado do sistema");
+      setRelayState(prevState);
+    }
+
+    setRelayLoading(false);
+  };
 
   const handleFilter = () => {
     const cpfDigits = normalizeCpf(searchInput);
@@ -105,7 +217,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   useEffect(() => {
     const cpfDigits = normalizeCpf(searchInput);
 
-    // só dispara quando tiver 11 dígitos
     if (cpfDigits.length === 11) {
       setInputError(false);
       setCpfNotFound(false);
@@ -116,7 +227,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     }
   }, [searchInput]);
 
-  // ✅ Busca a última medição (corrige o 400 usando ORDER BY id)
+  // ✅ Busca a última medição (instantâneo)
   const fetchLatestData = async () => {
     if (!targetCPF) return;
 
@@ -126,7 +237,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       .from("measurements")
       .select("*")
       .eq("user_cpf", targetCPF)
-      .order("id", { ascending: false }) // ✅ MAIS SEGURO: evita erro com colunas de data
+      .order("id", { ascending: false })
       .limit(1);
 
     if (error) {
@@ -139,12 +250,26 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       });
       setDbError(error.message || "Erro ao consultar measurements");
       setCpfNotFound(false);
-      setRealData({ voltage: 0, current: 0, power: 0, status: "Offline" });
+      setRealData({
+        voltage: 0,
+        current: 0,
+        solarW: 0,
+        consW: 0,
+        netW: 0,
+        status: "Offline",
+      });
       return;
     }
 
     if (!data || data.length === 0) {
-      setRealData({ voltage: 0, current: 0, power: 0, status: "Offline" });
+      setRealData({
+        voltage: 0,
+        current: 0,
+        solarW: 0,
+        consW: 0,
+        netW: 0,
+        status: "Offline",
+      });
       setCpfNotFound(true);
       return;
     }
@@ -153,18 +278,58 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
     const voltage = toNum(row.voltage);
     const current = toNum(row.current);
-    const solarGen = toNum(row.solar_generation);
-    const houseCons = toNum(row.house_consumption);
-    const netPower = solarGen - houseCons;
+
+    // ⚠️ aqui assumimos que solar_generation e house_consumption estão em W (como no seu print)
+    const solarW = toNum(row.solar_generation);
+    const consW = toNum(row.house_consumption);
+    const netW = solarW - consW;
 
     setRealData({
       voltage,
       current,
-      power: Number(netPower.toFixed(2)),
+      solarW,
+      consW,
+      netW,
       status: "Online",
     });
 
     setCpfNotFound(false);
+  };
+
+  // ✅ Calcula Geração do Dia (kWh) integrando solar_generation (W)
+  const calcDailyKwh = async () => {
+    if (!targetCPF) return;
+
+    setDailyKwhError("");
+
+    // início do dia no horário local
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+
+    const { data, error } = await supabase
+      .from("measurements")
+      .select("timestamp,solar_generation")
+      .eq("user_cpf", targetCPF)
+      .gte("timestamp", start.toISOString())
+      .order("timestamp", { ascending: true })
+      .limit(5000);
+
+    if (error) {
+      console.error("Erro calcDailyKwh:", error);
+      setDailyKwhError(error.message || "Erro ao calcular kWh do dia");
+      setDailyKwh(0);
+      return;
+    }
+
+    const rows = (data || []) as { timestamp: string; solar_generation: any }[];
+
+    if (!rows || rows.length < 2) {
+      setDailyKwh(0);
+      return;
+    }
+
+    const kwh = integrateKwhFromRows(rows);
+    setDailyKwh(Number(kwh.toFixed(3)));
   };
 
   // ✅ Busca nome pelo CPF (customers)
@@ -211,65 +376,121 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     return () => window.clearInterval(id);
   }, []);
 
-  // ✅ Buscar + Realtime
+  // ✅ ref do CPF para evitar race em callbacks
+  const cpfRef = useRef(targetCPF);
   useEffect(() => {
-    let subscription: any = null;
+    cpfRef.current = targetCPF;
+  }, [targetCPF]);
+
+  // ✅ Buscar + Realtime + Polling fallback
+  useEffect(() => {
+    let subscription: any = null; // measurements realtime
+    let relaySub: any = null; // device_status realtime
     let pollId: number | null = null;
+    let kwhPollId: number | null = null;
 
     if (targetCPF) {
-      // 🔹 primeira carga imediata
+      // primeira carga
       fetchLatestData();
       fetchPersonName();
+      fetchRelayState();
+      calcDailyKwh();
 
-      // 🔹 polling fallback (a cada 5 segundos)
+      // polling rápido (instantâneo)
       pollId = window.setInterval(() => {
         fetchLatestData();
+        fetchRelayState();
       }, 5000);
 
-      // 🔹 realtime (INSERT + UPDATE)
+      // polling mais leve pro kWh do dia (para não pesar)
+      kwhPollId = window.setInterval(() => {
+        calcDailyKwh();
+      }, 15000);
+
+      // realtime (measurements)
       subscription = supabase
-        .channel(`realtime-measurements-${targetCPF}`) // canal único por CPF
+        .channel(`realtime-measurements-${targetCPF}`)
         .on(
           "postgres_changes",
           {
-            event: "*", // INSERT + UPDATE
+            event: "*",
             schema: "public",
             table: "measurements",
             filter: `user_cpf=eq.${targetCPF}`,
           },
-          (payload) => {
-            const solarGen = toNum(payload.new.solar_generation);
-            const houseCons = toNum(payload.new.house_consumption);
-            const netPower = solarGen - houseCons;
+          (payload: any) => {
+            const n = payload?.new;
+            if (!n) return;
+
+            const solarW = toNum(n.solar_generation);
+            const consW = toNum(n.house_consumption);
+            const netW = solarW - consW;
 
             setRealData({
-              voltage: toNum(payload.new.voltage),
-              current: toNum(payload.new.current),
-              power: Number(netPower.toFixed(2)),
+              voltage: toNum(n.voltage),
+              current: toNum(n.current),
+              solarW,
+              consW,
+              netW,
               status: "Online",
             });
 
             setCpfNotFound(false);
             setDbError("");
+
+            // Atualiza kWh do dia (chamada leve, mas evita a cada evento se estiver chegando muito rápido)
+            // Aqui fazemos uma atualização simples: recalcula no máximo a cada 15s pelo polling.
+          },
+        )
+        .subscribe();
+
+      // realtime (device_status)
+      relaySub = supabase
+        .channel(`realtime-device-status-${DEVICE_ID}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "device_status",
+            filter: `device_id=eq.${DEVICE_ID}`,
+          },
+          (payload: any) => {
+            setRelayState(!!payload.new.relay_state);
+            setRelayError("");
           },
         )
         .subscribe();
     } else {
-      // reset quando não há CPF
-      setRealData({ voltage: 0, current: 0, power: 0, status: "Offline" });
+      // reset
+      setRealData({
+        voltage: 0,
+        current: 0,
+        solarW: 0,
+        consW: 0,
+        netW: 0,
+        status: "Offline",
+      });
       setCpfNotFound(false);
       setDbError("");
       setPersonName("");
       setNameNotFound(false);
       setLoadingName(false);
+
+      setDailyKwh(0);
+      setDailyKwhError("");
+
+      setRelayState(null);
+      setRelayError("");
+      setRelayLoading(false);
     }
 
-    // 🔹 limpeza correta
     return () => {
       if (subscription) supabase.removeChannel(subscription);
+      if (relaySub) supabase.removeChannel(relaySub);
       if (pollId) window.clearInterval(pollId);
+      if (kwhPollId) window.clearInterval(kwhPollId);
     };
-
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetCPF]);
 
@@ -355,17 +576,11 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                 </div>
               )}
 
-              {/* erro real do banco */}
               {!inputError && dbError && targetCPF && (
                 <div className="flex items-center gap-1 mt-2 text-red-400 text-[10px] font-bold uppercase tracking-wider ml-2">
                   <AlertCircle className="w-3 h-3" />
                   Erro ao consultar o banco: {dbError}
                 </div>
-              )}
-
-              {/* sem dados */}
-              {!inputError && !dbError && cpfNotFound && targetCPF && (
-                <div className="flex items-center gap-1 mt-2 text-yellow-400 text-[10px] font-bold uppercase tracking-wider ml-2"></div>
               )}
             </div>
 
@@ -403,33 +618,58 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
             </div>
 
             {/* Cards */}
-            <div className="grid grid-cols-2 gap-2 mb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
               <MetricsCard
                 icon={<Sun className="w-4 h-4" />}
-                label="Tensão"
-                value={`${realData.voltage} V`}
+                label="Geração (Hoje)"
+                value={`${dailyKwh.toFixed(2)} kWh`}
                 color="green"
               />
               <MetricsCard
                 icon={<Zap className="w-4 h-4" />}
-                label="Saldo (P)"
-                value={`${realData.power} kW`}
-                color="blue"
+                label="Potência Solar"
+                value={`${wToKw(realData.solarW).toFixed(3)} kW`}
+                color="red"
               />
               <MetricsCard
-                icon={<Activity className="w-4 h-4" />}
-                label="Corrente"
-                value={`${realData.current} A`}
+                icon={<Plug className="w-4 h-4" />}
+                label="Tensão"
+                value={`${realData.voltage.toFixed(1)} V`}
                 color="yellow"
               />
               <MetricsCard
-                icon={<Activity className="w-4 h-4" />}
+                icon={
+                  relayState === null ? (
+                    <Wifi className="w-4 h-4 text-gray-400" />
+                  ) : relayState ? (
+                    <Wifi className="w-4 h-4" />
+                  ) : (
+                    <WifiOff className="w-4 h-4" />
+                  )
+                }
                 label="Status"
-                value={realData.status}
-                color={realData.status === "Online" ? "green" : "red"}
-                valueColor={realData.status === "Online" ? "green" : "red"}
+                value={
+                  relayState === null
+                    ? "Carregando..."
+                    : relayState
+                      ? "Online"
+                      : "Offline"
+                }
+                color={
+                  relayState === null ? "yellow" : relayState ? "green" : "red"
+                }
+                valueColor={
+                  relayState === null ? "yellow" : relayState ? "green" : "red"
+                }
               />
             </div>
+
+            {dailyKwhError && (
+              <div className="flex items-center gap-1 -mt-2 mb-3 text-yellow-400 text-[10px] font-bold uppercase tracking-wider">
+                <AlertCircle className="w-3 h-3" />
+                kWh do dia: {dailyKwhError}
+              </div>
+            )}
 
             {/* Chart */}
             <div className="bg-[#1a2942] rounded-2xl p-4 mb-6">
@@ -441,9 +681,56 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
               </div>
             </div>
 
-            <button className="w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-4 rounded-xl transition-colors">
-              DESLIGAR SISTEMA
+            {/* Status do sistema */}
+            <div className="mb-2 text-xs text-gray-300">
+              Sistema:{" "}
+              <span
+                className={`font-bold ${
+                  relayState === null
+                    ? "text-gray-400"
+                    : relayState
+                      ? "text-green-400"
+                      : "text-red-400"
+                }`}
+              >
+                {relayState === null
+                  ? "Carregando..."
+                  : relayState
+                    ? "LIGADO"
+                    : "DESLIGADO"}
+              </span>
+            </div>
+
+            {/* BOTÃO TOGGLE */}
+            <button
+              onClick={toggleSystemPower}
+              disabled={relayLoading || relayState === null || !targetCPF}
+              className={`w-full font-semibold py-4 rounded-xl transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
+                relayState
+                  ? "bg-red-500 hover:bg-red-600 text-white"
+                  : "bg-green-500 hover:bg-green-600 text-[#0a1628]"
+              }`}
+            >
+              {relayLoading
+                ? "ENVIANDO..."
+                : relayState
+                  ? "DESLIGAR SISTEMA"
+                  : "LIGAR SISTEMA"}
             </button>
+
+            {relayError && (
+              <div className="flex items-center gap-1 mt-2 text-red-400 text-[10px] font-bold uppercase tracking-wider">
+                <AlertCircle className="w-3 h-3" />
+                {relayError}
+              </div>
+            )}
+
+            {!targetCPF && (
+              <div className="flex items-center gap-1 mt-2 text-yellow-400 text-[10px] font-bold uppercase tracking-wider">
+                <AlertCircle className="w-3 h-3" />
+                Informe um CPF para habilitar o controle
+              </div>
+            )}
           </>
         );
     }
@@ -506,7 +793,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                     : "text-gray-300 hover:bg-[#0a1628]"
                 }`}
               >
-                <Sun className="w-5 h-5" />
+                <Menu className="w-5 h-5" />
                 Dashboard
               </button>
 
@@ -521,7 +808,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                     : "text-gray-300 hover:bg-[#0a1628]"
                 }`}
               >
-                <Zap className="w-5 h-5" />
+                <Sun className="w-5 h-5" />
                 Geração
               </button>
 
@@ -536,7 +823,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                     : "text-gray-300 hover:bg-[#0a1628]"
                 }`}
               >
-                <Activity className="w-5 h-5" />
+                <Plug className="w-5 h-5" />
                 Consumo
               </button>
 

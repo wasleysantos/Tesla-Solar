@@ -29,17 +29,17 @@ export function Signup({ onSignup, onNavigateToLogin }: SignupProps) {
     }
 
     if (name && email && password) {
-    onSignup(name, email, password);
+      onSignup(name, email, password);
 
-    // opcional: limpar campos
-    setName("");
-    setEmail("");
-    setPassword("");
-    setConfirmPassword("");
+      // opcional: limpar campos
+      setName("");
+      setEmail("");
+      setPassword("");
+      setConfirmPassword("");
 
-    // voltar para o login
-    onNavigateToLogin();
-  }
+      // voltar para o login
+      onNavigateToLogin();
+    }
   };
 
   return (
@@ -47,11 +47,7 @@ export function Signup({ onSignup, onNavigateToLogin }: SignupProps) {
       <div className="w-full max-w-md">
         {/* Logo (somente imagem) */}
         <div className="flex items-center justify-center mb-12">
-          <img
-            src={logoImage}
-            alt="Logo"
-            className="h-16 object-contain"
-          />
+          <img src={logoImage} alt="Logo" className="h-16 object-contain" />
         </div>
 
         {/* Signup Form */}

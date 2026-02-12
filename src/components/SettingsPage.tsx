@@ -37,6 +37,15 @@ function formatCpf(v: string) {
   return out;
 }
 
+function formatCep(v: string) {
+  const digits = v.replace(/\D/g, "").slice(0, 8);
+  const part1 = digits.slice(0, 5);
+  const part2 = digits.slice(5, 8);
+
+  if (part2) return `${part1}-${part2}`;
+  return part1;
+}
+
 // ✅ validação CPF (dígitos verificadores)
 function isValidCPF(cpf: string) {
   const clean = onlyDigits(cpf);
@@ -93,27 +102,31 @@ export function SettingsPage({ user, onSelectCpf }: SettingsPageProps) {
   }, []);
 
   // Auto-preencher Endereço/Cidade/UF via CEP (viaCEP)
-  const handleZipCodeBlur = async () => {
-    const zip = newZip.replace(/\D/g, "");
-    if (zip.length !== 8) return;
+  const fetchAddressByCep = async (zipRaw: string) => {
+  const zip = (zipRaw || "").replace(/\D/g, "");
+  if (zip.length !== 8) return;
 
-    try {
-      const res = await fetch(`https://viacep.com.br/ws/${zip}/json/`);
-      const data = await res.json();
+  try {
+    const res = await fetch(`https://viacep.com.br/ws/${zip}/json/`);
+    const data = await res.json();
 
-      if (!data?.erro) {
-        setNewCity(data.localidade || "");
-        setNewState((data.uf || "").toUpperCase());
+    if (!data?.erro) {
+      const logradouro = data.logradouro || "";
+      const bairro = data.bairro || "";
 
-        const logradouro = data.logradouro || "";
-        const bairro = data.bairro || "";
-        const sugerido = [logradouro, bairro].filter(Boolean).join(" - ");
-        if (!newAddress.trim() && sugerido) setNewAddress(sugerido);
+      setNewCity(data.localidade || "");
+      setNewState((data.uf || "").toUpperCase());
+
+      const sugerido = [logradouro, bairro].filter(Boolean).join(" - ");
+      if (!newAddress.trim() && sugerido) {
+        setNewAddress(sugerido);
       }
-    } catch {
-      // silencioso
     }
-  };
+  } catch (err) {
+    console.error("Erro ao buscar CEP:", err);
+  }
+};
+
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -233,7 +246,7 @@ export function SettingsPage({ user, onSelectCpf }: SettingsPageProps) {
             </h3>
           </div>
 
-          <form onSubmit={handleRegister} className="p-6 space-y-4">
+          <form onSubmit={handleRegister} className="p-4 sm:p-6 space-y-4">
             {/* Nome */}
             <div className="space-y-1">
               <label className="text-xs text-gray-400">Nome completo</label>
@@ -285,17 +298,29 @@ export function SettingsPage({ user, onSelectCpf }: SettingsPageProps) {
             </div>
 
             {/* CEP + UF */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-2 space-y-1">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="sm:col-span-2 space-y-1">
                 <label className="text-xs text-gray-400">CEP</label>
                 <input
-                  className="w-full bg-[#0a1628] border border-gray-700 rounded-xl px-3 py-3 text-white text-sm outline-none focus:border-green-500"
-                  placeholder="00000-000"
-                  value={newZip}
-                  onBlur={handleZipCodeBlur}
-                  onChange={(e) => setNewZip(e.target.value)}
-                />
+  className="w-full bg-[#0a1628] border border-gray-700 rounded-xl px-3 py-3 text-white text-sm outline-none focus:border-green-500"
+  placeholder="00000-000"
+  inputMode="numeric"
+  value={newZip}
+  onChange={(e) => {
+    const formatted = formatCep(e.target.value);
+    setNewZip(formatted);
+
+    const digits = formatted.replace(/\D/g, "");
+    if (digits.length === 8) {
+      fetchAddressByCep(digits);
+    }
+  }}
+/>
+
+
+
               </div>
+
               <div className="space-y-1">
                 <label className="text-xs text-gray-400">UF</label>
                 <input
