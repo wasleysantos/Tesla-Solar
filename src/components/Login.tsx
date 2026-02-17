@@ -98,7 +98,7 @@ export function Login({
 
   return (
     <div
-      className="min-h-dvh relative flex items-center justify-center p-4 sm:p-6 bg-cover bg-center overflow-hidden"
+      className="min-h-dvh relative flex items-center justify-center p-4 sm:p-6 bg-contain sm:bg-cover bg-center bg-no-repeat overflow-hidden"
       style={{ backgroundImage: `url(${solarBg})` }}
     >
       {/* Gradiente */}
