@@ -97,23 +97,23 @@ export function Login({
   const busy = loadingLogin || loadingGoogle;
 
   return (
+  <div className="relative w-full min-h-screen flex items-center justify-center overflow-hidden">
+    
+    {/* BACKGROUND FIXO */}
     <div
-      className="min-h-dvh relative flex items-center justify-center p-4 sm:p-6 bg-contain sm:bg-cover bg-center bg-no-repeat overflow-hidden"
+      className="fixed inset-0 -z-10 bg-cover bg-center bg-no-repeat"
       style={{ backgroundImage: `url(${solarBg})` }}
-    >
-      {/* Gradiente */}
-      <div className="absolute inset-0 bg-gradient-to-br from-[#0a1628]/90 via-[#0a1628]/80 to-[#071224]/95 pointer-events-none" />
+    />
 
-      {/* Vinheta */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_40%,rgba(0,0,0,0.7)_100%)] pointer-events-none" />
+    {/* Gradiente */}
+    <div className="fixed inset-0 -z-10 bg-gradient-to-br from-[#0a1628]/90 via-[#0a1628]/80 to-[#071224]/95 pointer-events-none" />
 
-      {/* Luz solar animada */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -left-40 w-[600px] h-[600px] bg-yellow-400/10 rounded-full blur-[140px] animate-solarGlow" />
-      </div>
+    {/* Vinheta */}
+    <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_center,transparent_40%,rgba(0,0,0,0.7)_100%)] pointer-events-none" />
 
-      {/* Conteúdo */}
-      <div className="w-full max-w-md relative z-10">
+    {/* Conteúdo */}
+    <div className="w-full max-w-md px-4 sm:px-6 relative z-10">
+
         {/* ✅ Logo + Badge com fade suave */}
         <div
           className={[
