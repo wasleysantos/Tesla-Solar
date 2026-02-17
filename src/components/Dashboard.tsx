@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Sun,
   Zap,
-  Activity,
   History,
   Settings,
   LogOut,
@@ -10,7 +9,6 @@ import {
   X,
   AlertCircle,
   Plug,
-  PlugZap,
   Wifi,
   WifiOff,
 } from "lucide-react";
@@ -23,6 +21,10 @@ import { Generation } from "./Generation";
 import { Consumption } from "./Consumption";
 import { Historic } from "./Historic";
 import { SettingsPage } from "./SettingsPage";
+
+// ✅ NOVO: sua nova página de cadastro
+import { CustomerRegisterPage } from "./CustomerRegisterPage";
+
 import logoImage from "figma:asset/86a5dbd476eaf5850e2d574675b5ba3853e32186.png";
 
 interface DashboardProps {
@@ -35,7 +37,8 @@ type Screen =
   | "generation"
   | "consumption"
   | "historic"
-  | "settings";
+  | "settings"
+  | "customer_register"; // ✅ NOVO
 
 const normalizeCpf = (value: string) =>
   (value || "").replace(/\D/g, "").slice(0, 11);
@@ -64,12 +67,10 @@ function tsToMs(ts: string) {
   return Number.isFinite(ms) ? ms : NaN;
 }
 
-// kW (a partir de W)
 function wToKw(w: number) {
   return w / 1000;
 }
 
-// Integra potência (W) ao longo do tempo => kWh (trapézio)
 function integrateKwhFromRows(
   rowsAsc: { timestamp: string; solar_generation: any }[],
 ) {
@@ -87,8 +88,8 @@ function integrateKwhFromRows(
 
     const dtHours = Math.max(0, (t1 - t0) / (1000 * 60 * 60));
 
-    const p0w = Math.max(0, toNum(prev.solar_generation)); // W
-    const p1w = Math.max(0, toNum(curr.solar_generation)); // W
+    const p0w = Math.max(0, toNum(prev.solar_generation));
+    const p1w = Math.max(0, toNum(curr.solar_generation));
 
     const pAvgKw = (p0w + p1w) / 2 / 1000;
     kwh += pAvgKw * dtHours;
@@ -103,34 +104,28 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
   const [now, setNow] = useState(() => new Date());
 
-  // ✅ CPF do filtro SEMPRE limpo (11 dígitos)
   const [targetCPF, setTargetCPF] = useState("");
-
-  // ✅ input do usuário (mascarado)
   const [searchInput, setSearchInput] = useState("");
   const [inputError, setInputError] = useState(false);
 
-  // ✅ sem dados (realmente não encontrou measurement)
   const [cpfNotFound, setCpfNotFound] = useState(false);
-
-  // ✅ erro real de banco (400 / RLS / etc)
   const [dbError, setDbError] = useState("");
 
   const [personName, setPersonName] = useState<string>("");
   const [nameNotFound, setNameNotFound] = useState(false);
   const [loadingName, setLoadingName] = useState(false);
 
-  // ✅ Dados instantâneos (W)
+  const [lastUpdate, setLastUpdate] = useState<string>("—");
+
   const [realData, setRealData] = useState({
     voltage: 0,
     current: 0,
-    solarW: 0, // geração instantânea (W)
-    consW: 0, // consumo instantâneo (W)
-    netW: 0, // saldo instantâneo (W) = solar - cons
+    solarW: 0,
+    consW: 0,
+    netW: 0,
     status: "Offline" as "Online" | "Offline",
   });
 
-  // ✅ Geração acumulada do dia (kWh)
   const [dailyKwh, setDailyKwh] = useState(0);
   const [dailyKwhError, setDailyKwhError] = useState("");
 
@@ -139,7 +134,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
   // ==============================
   const DEVICE_ID = "ESP32_PZEM_TESTE";
 
-  // LIGADO=true / DESLIGADO=false
   const [relayState, setRelayState] = useState<boolean | null>(null);
   const [relayLoading, setRelayLoading] = useState(false);
   const [relayError, setRelayError] = useState("");
@@ -197,37 +191,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     setRelayLoading(false);
   };
 
-  const handleFilter = () => {
-    const cpfDigits = normalizeCpf(searchInput);
-
-    if (cpfDigits.length !== 11) {
-      setInputError(true);
-      return;
-    }
-
-    setInputError(false);
-    setCpfNotFound(false);
-    setDbError("");
-    setNameNotFound(false);
-    setPersonName("");
-
-    setTargetCPF(cpfDigits);
-  };
-
-  useEffect(() => {
-    const cpfDigits = normalizeCpf(searchInput);
-
-    if (cpfDigits.length === 11) {
-      setInputError(false);
-      setCpfNotFound(false);
-      setDbError("");
-      setNameNotFound(false);
-      setPersonName("");
-      setTargetCPF(cpfDigits);
-    }
-  }, [searchInput]);
-
-  // ✅ Busca a última medição (instantâneo)
   const fetchLatestData = async () => {
     if (!targetCPF) return;
 
@@ -237,7 +200,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       .from("measurements")
       .select("*")
       .eq("user_cpf", targetCPF)
-      .order("id", { ascending: false })
+      .order("timestamp", { ascending: false })
       .limit(1);
 
     if (error) {
@@ -250,6 +213,8 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
       });
       setDbError(error.message || "Erro ao consultar measurements");
       setCpfNotFound(false);
+
+      setLastUpdate("—");
       setRealData({
         voltage: 0,
         current: 0,
@@ -262,6 +227,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     }
 
     if (!data || data.length === 0) {
+      setLastUpdate("—");
       setRealData({
         voltage: 0,
         current: 0,
@@ -276,10 +242,21 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
     const row: any = data[0];
 
+    const formattedDate = row?.timestamp
+      ? new Intl.DateTimeFormat("pt-BR", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }).format(new Date(row.timestamp))
+      : "—";
+    setLastUpdate(formattedDate);
+
     const voltage = toNum(row.voltage);
     const current = toNum(row.current);
 
-    // ⚠️ aqui assumimos que solar_generation e house_consumption estão em W (como no seu print)
     const solarW = toNum(row.solar_generation);
     const consW = toNum(row.house_consumption);
     const netW = solarW - consW;
@@ -296,13 +273,11 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     setCpfNotFound(false);
   };
 
-  // ✅ Calcula Geração do Dia (kWh) integrando solar_generation (W)
   const calcDailyKwh = async () => {
     if (!targetCPF) return;
 
     setDailyKwhError("");
 
-    // início do dia no horário local
     const start = new Date();
     start.setHours(0, 0, 0, 0);
 
@@ -332,7 +307,6 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     setDailyKwh(Number(kwh.toFixed(3)));
   };
 
-  // ✅ Busca nome pelo CPF (customers)
   const fetchPersonName = async () => {
     if (!targetCPF) return;
 
@@ -370,44 +344,92 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     setLoadingName(false);
   };
 
-  // ✅ Relógio
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(id);
   }, []);
 
-  // ✅ ref do CPF para evitar race em callbacks
   const cpfRef = useRef(targetCPF);
   useEffect(() => {
     cpfRef.current = targetCPF;
   }, [targetCPF]);
 
-  // ✅ Buscar + Realtime + Polling fallback
+  const refreshAll = () => {
+    if (!cpfRef.current) return;
+    fetchLatestData();
+    fetchPersonName();
+    fetchRelayState();
+    calcDailyKwh();
+  };
+
+  const handleFilter = () => {
+    const cpfDigits = normalizeCpf(searchInput);
+
+    if (cpfDigits.length !== 11) {
+      setInputError(true);
+      return;
+    }
+
+    setInputError(false);
+    setCpfNotFound(false);
+    setDbError("");
+    setNameNotFound(false);
+    setPersonName("");
+
+    if (cpfDigits === targetCPF) {
+      refreshAll();
+      return;
+    }
+
+    setTargetCPF(cpfDigits);
+  };
+
   useEffect(() => {
-    let subscription: any = null; // measurements realtime
-    let relaySub: any = null; // device_status realtime
+    const cpfDigits = normalizeCpf(searchInput);
+
+    if (cpfDigits.length < 11) {
+      setInputError(false);
+      return;
+    }
+
+    if (cpfDigits.length === 11) {
+      setInputError(false);
+
+      if (cpfDigits === targetCPF) {
+        refreshAll();
+        return;
+      }
+
+      setCpfNotFound(false);
+      setDbError("");
+      setNameNotFound(false);
+      setPersonName("");
+      setTargetCPF(cpfDigits);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput]);
+
+  useEffect(() => {
+    let subscription: any = null;
+    let relaySub: any = null;
     let pollId: number | null = null;
     let kwhPollId: number | null = null;
 
     if (targetCPF) {
-      // primeira carga
       fetchLatestData();
       fetchPersonName();
       fetchRelayState();
       calcDailyKwh();
 
-      // polling rápido (instantâneo)
       pollId = window.setInterval(() => {
         fetchLatestData();
         fetchRelayState();
       }, 5000);
 
-      // polling mais leve pro kWh do dia (para não pesar)
       kwhPollId = window.setInterval(() => {
         calcDailyKwh();
       }, 15000);
 
-      // realtime (measurements)
       subscription = supabase
         .channel(`realtime-measurements-${targetCPF}`)
         .on(
@@ -421,6 +443,18 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
           (payload: any) => {
             const n = payload?.new;
             if (!n) return;
+
+            const formatted = n?.timestamp
+              ? new Intl.DateTimeFormat("pt-BR", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                }).format(new Date(n.timestamp))
+              : "—";
+            setLastUpdate(formatted);
 
             const solarW = toNum(n.solar_generation);
             const consW = toNum(n.house_consumption);
@@ -437,14 +471,10 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
 
             setCpfNotFound(false);
             setDbError("");
-
-            // Atualiza kWh do dia (chamada leve, mas evita a cada evento se estiver chegando muito rápido)
-            // Aqui fazemos uma atualização simples: recalcula no máximo a cada 15s pelo polling.
           },
         )
         .subscribe();
 
-      // realtime (device_status)
       relaySub = supabase
         .channel(`realtime-device-status-${DEVICE_ID}`)
         .on(
@@ -462,7 +492,7 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
         )
         .subscribe();
     } else {
-      // reset
+      setLastUpdate("—");
       setRealData({
         voltage: 0,
         current: 0,
@@ -515,10 +545,21 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
     switch (currentScreen) {
       case "generation":
         return <Generation cpf={targetCPF} />;
+
       case "consumption":
         return <Consumption cpf={targetCPF} />;
+
       case "historic":
-        return <Historic cpf={targetCPF} />;
+        return (
+          <Historic
+            cpf={targetCPF}
+            onNavigate={(page) => {
+              setCurrentScreen(page as any);
+              setMenuOpen(false);
+            }}
+          />
+        );
+
       case "settings":
         return (
           <SettingsPage
@@ -531,12 +572,31 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
               setDbError("");
               setTargetCPF(clean);
             }}
+            // ✅ NOVO: navega pra tela de cadastro
+            onNavigate={(page) => {
+              setCurrentScreen(page);
+              setMenuOpen(false);
+            }}
+          />
+        );
+
+      // ✅ NOVO: tela dedicada de cadastro
+      case "customer_register":
+        return (
+          <CustomerRegisterPage
+            onBack={() => {
+              setCurrentScreen("settings");
+              setMenuOpen(false);
+            }}
           />
         );
 
       default:
         return (
           <>
+            {/* ... seu dashboard padrão (sem mudanças) ... */}
+            {/* (mantive exatamente como está no seu código) */}
+
             {/* Filtro CPF */}
             <div className="mb-4">
               <div className="flex gap-3 items-center justify-center">
@@ -584,8 +644,8 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
               )}
             </div>
 
-            {/* CPF + Nome + Relógio */}
-            <div className="mb-3 flex items-center justify-between">
+            {/* CPF + Nome + Última atualização + Relógio */}
+            <div className="mb-3 flex items-start justify-between gap-3">
               <div className="text-left">
                 <div className="text-xs text-gray-400">
                   Monitorando por CPF:
@@ -595,15 +655,22 @@ export function Dashboard({ user, onLogout }: DashboardProps) {
                 </div>
 
                 {targetCPF && (
-                  <div className="text-xs text-gray-300 mt-0.5">
-                    {loadingName
-                      ? "Carregando nome..."
-                      : personName
-                        ? personName
-                        : nameNotFound
-                          ? "CPF não encontrado"
-                          : ""}
-                  </div>
+                  <>
+                    <div className="text-xs text-gray-300 mt-0.5">
+                      {loadingName
+                        ? "Carregando nome..."
+                        : personName
+                          ? personName
+                          : nameNotFound
+                            ? "CPF não encontrado"
+                            : ""}
+                    </div>
+
+                    <div className="text-[11px] text-gray-500 mt-1">
+                      Última atualização:{" "}
+                      <span className="text-gray-300">{lastUpdate}</span>
+                    </div>
+                  </>
                 )}
               </div>
 

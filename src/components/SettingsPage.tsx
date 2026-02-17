@@ -5,8 +5,6 @@ import {
   Github,
   ChevronRight,
   UserPlus,
-  CheckCircle,
-  AlertCircle,
   ExternalLink,
   Search,
   MapPin,
@@ -16,6 +14,9 @@ import { supabase } from "../lib/supabase";
 interface SettingsPageProps {
   user: { name: string; email: string };
   onSelectCpf?: (cpf: string) => void;
+
+  // ✅ navegação sem router (agora inclui dashboard)
+  onNavigate?: (page: "settings" | "customer_register" | "dashboard") => void;
 }
 
 // ✅ helpers CPF
@@ -37,55 +38,15 @@ function formatCpf(v: string) {
   return out;
 }
 
-function formatCep(v: string) {
-  const digits = v.replace(/\D/g, "").slice(0, 8);
-  const part1 = digits.slice(0, 5);
-  const part2 = digits.slice(5, 8);
-
-  if (part2) return `${part1}-${part2}`;
-  return part1;
-}
-
-// ✅ validação CPF (dígitos verificadores)
-function isValidCPF(cpf: string) {
-  const clean = onlyDigits(cpf);
-  if (clean.length !== 11) return false;
-  if (/^(\d)\1{10}$/.test(clean)) return false;
-
-  let sum = 0;
-  for (let i = 0; i < 9; i++) sum += Number(clean[i]) * (10 - i);
-  let d1 = (sum * 10) % 11;
-  if (d1 === 10) d1 = 0;
-  if (d1 !== Number(clean[9])) return false;
-
-  sum = 0;
-  for (let i = 0; i < 10; i++) sum += Number(clean[i]) * (11 - i);
-  let d2 = (sum * 10) % 11;
-  if (d2 === 10) d2 = 0;
-  if (d2 !== Number(clean[10])) return false;
-
-  return true;
-}
-
-export function SettingsPage({ user, onSelectCpf }: SettingsPageProps) {
+export function SettingsPage({
+  user,
+  onSelectCpf,
+  onNavigate,
+}: SettingsPageProps) {
   const githubRepoUrl = "https://github.com/wasleysantos/Tesla-Solar";
   const whatsappUrl = "https://wa.me/5598988020311";
   const appVersion = "";
 
-  // Estados do Cadastro
-  const [newName, setNewName] = useState("");
-  const [newCpf, setNewCpf] = useState("");
-  const [newEmail, setNewEmail] = useState("");
-  const [newAddress, setNewAddress] = useState("");
-  const [newZip, setNewZip] = useState("");
-  const [newState, setNewState] = useState("");
-  const [newCity, setNewCity] = useState("");
-
-  const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState<{
-    type: "success" | "error";
-    msg: string;
-  } | null>(null);
   const [customers, setCustomers] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -94,89 +55,13 @@ export function SettingsPage({ user, onSelectCpf }: SettingsPageProps) {
       .from("customers")
       .select("*")
       .order("name", { ascending: true });
+
     if (data) setCustomers(data);
   };
 
   useEffect(() => {
     fetchCustomers();
   }, []);
-
-  // Auto-preencher Endereço/Cidade/UF via CEP (viaCEP)
-  const fetchAddressByCep = async (zipRaw: string) => {
-  const zip = (zipRaw || "").replace(/\D/g, "");
-  if (zip.length !== 8) return;
-
-  try {
-    const res = await fetch(`https://viacep.com.br/ws/${zip}/json/`);
-    const data = await res.json();
-
-    if (!data?.erro) {
-      const logradouro = data.logradouro || "";
-      const bairro = data.bairro || "";
-
-      setNewCity(data.localidade || "");
-      setNewState((data.uf || "").toUpperCase());
-
-      const sugerido = [logradouro, bairro].filter(Boolean).join(" - ");
-      if (!newAddress.trim() && sugerido) {
-        setNewAddress(sugerido);
-      }
-    }
-  } catch (err) {
-    console.error("Erro ao buscar CEP:", err);
-  }
-};
-
-
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setStatus(null);
-    setLoading(true);
-
-    const cpfDigits = onlyDigits(newCpf);
-
-    if (!isValidCPF(cpfDigits)) {
-      setStatus({ type: "error", msg: "CPF inválido. Verifique os dígitos." });
-      setLoading(false);
-      return;
-    }
-
-    const payload: any = {
-      name: newName.trim(),
-      cpf: cpfDigits,
-      email: newEmail.trim() || null,
-      address: newAddress.trim() || null,
-      zip_code: newZip.trim() || null,
-      state: newState.trim().toUpperCase() || null,
-      city: newCity.trim() || null,
-    };
-
-    const { error } = await supabase
-      .from("customers")
-      .upsert([payload], { onConflict: "cpf" });
-
-    if (error) {
-      setStatus({
-        type: "error",
-        msg: "Erro ao salvar. Verifique se o CPF é único e se as colunas existem no Supabase.",
-      });
-    } else {
-      setStatus({
-        type: "success",
-        msg: "Cliente cadastrado/atualizado com sucesso!",
-      });
-      setNewName("");
-      setNewCpf("");
-      setNewEmail("");
-      setNewAddress("");
-      setNewZip("");
-      setNewCity("");
-      setNewState("");
-      fetchCustomers();
-    }
-
-    setLoading(false);
-  };
 
   const filteredCustomers = customers.filter((c) => {
     const cpfMasked = formatCpf(c.cpf || "");
@@ -187,9 +72,16 @@ export function SettingsPage({ user, onSelectCpf }: SettingsPageProps) {
     );
   });
 
+  // ✅ seleciona cpf e vai para dashboard
+  const handleSelect = (cpf: string) => {
+    const clean = onlyDigits(cpf);
+    onSelectCpf?.(clean);
+    onNavigate?.("dashboard");
+  };
+
   return (
     <div className="space-y-6 pb-24 max-w-3xl mx-auto">
-      {/* Header mais “premium” */}
+      {/* Header */}
       <div className="flex items-end justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-white leading-tight">
@@ -206,7 +98,7 @@ export function SettingsPage({ user, onSelectCpf }: SettingsPageProps) {
         </div>
       </div>
 
-      {/* 1. PERFIL DO ADMINISTRADOR */}
+      {/* Perfil */}
       <div className="bg-[#1a2942] rounded-2xl p-4 border border-gray-800">
         <div className="flex items-center gap-4 mb-5">
           <div className="w-16 h-16 bg-gradient-to-br from-green-400 to-blue-500 rounded-full flex items-center justify-center text-white text-2xl font-bold shadow-lg">
@@ -223,159 +115,43 @@ export function SettingsPage({ user, onSelectCpf }: SettingsPageProps) {
 
         <div className="mt-1">..</div>
 
-        {/* Selo de Administrador */}
         <div
-          className="flex items-center justify-center gap-2 px-2 py-2 rounded-xl 
-                  bg-green-500/10 border border-green-500/20"
+          className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl
+          bg-gradient-to-r from-green-400 to-blue-500
+          text-[#0a1628] font-bold shadow-lg shadow-green-500/20"
         >
-          <ShieldCheck className="w-5 h-5 text-green-400" />
-          <span className="text-sm font-semibold text-green-300">
-            Administrador do Sistema
-          </span>
+          <ShieldCheck className="w-5 h-5" />
+          <span className="text-sm">Administrador do Sistema</span>
         </div>
       </div>
 
-      {/* 2 + 3 em grid (melhor em telas maiores, sem mudar lógica) */}
+      {/* 2 + 3 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 2. CADASTRO DE CLIENTES (layout moderno) */}
+        {/* 2. Atalho para cadastro */}
         <div className="bg-[#1a2942] rounded-2xl border border-green-500/20 overflow-hidden">
           <div className="p-6 border-b border-gray-800/60">
             <h3 className="text-white font-semibold flex items-center gap-2">
               <UserPlus className="w-5 h-5 text-green-400" />
-              Cadastrar Cliente
+              Cadastro de Cliente
             </h3>
+            <p className="text-xs text-gray-400 mt-1">
+              Abra a tela dedicada para cadastrar ou atualizar clientes.
+            </p>
           </div>
 
-          <form onSubmit={handleRegister} className="p-4 sm:p-6 space-y-4">
-            {/* Nome */}
-            <div className="space-y-1">
-              <label className="text-xs text-gray-400">Nome completo</label>
-              <input
-                className="w-full bg-[#0a1628] border border-gray-700 rounded-xl px-3 py-3 text-white text-sm outline-none focus:border-green-500"
-                placeholder="Ex: Maria Silva"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                required
-              />
-            </div>
-
-            {/* CPF + Email */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs text-gray-400">CPF</label>
-                <input
-                  className="w-full bg-[#0a1628] border border-gray-700 rounded-xl px-3 py-3 text-white text-sm outline-none focus:border-green-500 text-center tracking-wider"
-                  placeholder="000.000.000-00"
-                  value={newCpf}
-                  onChange={(e) => setNewCpf(formatCpf(e.target.value))}
-                  inputMode="numeric"
-                  maxLength={14}
-                  required
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs text-gray-400">E-mail</label>
-                <input
-                  className="w-full bg-[#0a1628] border border-gray-700 rounded-xl px-3 py-3 text-white text-sm outline-none focus:border-green-500"
-                  placeholder="cliente@email.com"
-                  type="email"
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                />
-              </div>
-            </div>
-
-            {/* Endereço */}
-            <div className="space-y-1">
-              <label className="text-xs text-gray-400">Endereço</label>
-              <input
-                className="w-full bg-[#0a1628] border border-gray-700 rounded-xl px-3 py-3 text-white text-sm outline-none focus:border-green-500"
-                placeholder="Rua, Nº, Bairro"
-                value={newAddress}
-                onChange={(e) => setNewAddress(e.target.value)}
-              />
-            </div>
-
-            {/* CEP + UF */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="sm:col-span-2 space-y-1">
-                <label className="text-xs text-gray-400">CEP</label>
-                <input
-  className="w-full bg-[#0a1628] border border-gray-700 rounded-xl px-3 py-3 text-white text-sm outline-none focus:border-green-500"
-  placeholder="00000-000"
-  inputMode="numeric"
-  value={newZip}
-  onChange={(e) => {
-    const formatted = formatCep(e.target.value);
-    setNewZip(formatted);
-
-    const digits = formatted.replace(/\D/g, "");
-    if (digits.length === 8) {
-      fetchAddressByCep(digits);
-    }
-  }}
-/>
-
-
-
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs text-gray-400">UF</label>
-                <input
-                  className="w-full bg-[#0a1628] border border-gray-700 rounded-xl px-3 py-3 text-white text-sm outline-none focus:border-green-500 text-center uppercase"
-                  placeholder="UF"
-                  value={newState}
-                  onChange={(e) => setNewState(e.target.value.toUpperCase())}
-                  maxLength={2}
-                />
-              </div>
-            </div>
-
-            {/* Cidade */}
-            <div className="space-y-1">
-              <label className="text-xs text-gray-400">Cidade</label>
-              <input
-                className="w-full bg-[#0a1628] border border-gray-700 rounded-xl px-3 py-3 text-white text-sm outline-none focus:border-green-500"
-                placeholder="Ex: São Luis"
-                value={newCity}
-                onChange={(e) => setNewCity(e.target.value)}
-              />
-            </div>
-
-            {/* Botão + status */}
-            <div className="pt-2 space-y-3">
-              <div className="flex justify-end">
-                <button
-                  className="bg-green-500 text-[#0a1628] font-bold px-4 py-2 text-sm rounded-xl hover:bg-green-400 transition-all shadow-lg shadow-green-500/10 disabled:opacity-70 disabled:cursor-not-allowed"
-                  disabled={loading}
-                >
-                  {loading ? "SALVANDO..." : "SALVAR CLIENTE"}
-                </button>
-              </div>
-
-              {status && (
-                <div
-                  className={`flex items-center gap-2 text-xs px-3 py-2 rounded-xl border ${
-                    status.type === "success"
-                      ? "text-green-300 border-green-500/20 bg-green-500/10"
-                      : "text-red-300 border-red-500/20 bg-red-500/10"
-                  }`}
-                >
-                  {status.type === "success" ? (
-                    <CheckCircle className="w-4 h-4" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4" />
-                  )}
-                  <span className="leading-snug">{status.msg}</span>
-                </div>
-              )}
-            </div>
-          </form>
+          <div className="p-4 sm:p-6">
+            <button
+              type="button"
+              onClick={() => onNavigate?.("customer_register")}
+              className="w-full bg-green-500 text-[#0a1628] font-bold px-4 py-3 text-sm rounded-2xl hover:bg-green-400 transition-all shadow-lg shadow-green-500/10 flex items-center justify-center gap-2"
+            >
+              <UserPlus className="w-4 h-4" />
+              CADASTRAR CLIENTE
+            </button>
+          </div>
         </div>
 
-        {/* 3. BASE DE MONITORAMENTO (layout moderno) */}
+        {/* 3. Base de Monitoramento */}
         <div className="bg-[#1a2942] rounded-2xl border border-gray-800 overflow-hidden">
           <div className="p-6 border-b border-gray-800/60">
             <h3 className="text-white font-semibold">Base de Monitoramento</h3>
@@ -385,7 +161,6 @@ export function SettingsPage({ user, onSelectCpf }: SettingsPageProps) {
           </div>
 
           <div className="p-6 space-y-4">
-            {/* Busca */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
               <input
@@ -397,7 +172,6 @@ export function SettingsPage({ user, onSelectCpf }: SettingsPageProps) {
               />
             </div>
 
-            {/* “Resumo” */}
             <div className="flex items-center justify-between text-xs text-gray-400">
               <span>
                 Resultados:{" "}
@@ -413,7 +187,6 @@ export function SettingsPage({ user, onSelectCpf }: SettingsPageProps) {
               </span>
             </div>
 
-            {/* Lista */}
             <div className="space-y-3 max-h-72 overflow-y-auto pr-2 custom-scrollbar">
               {filteredCustomers.map((c) => (
                 <div
@@ -443,16 +216,15 @@ export function SettingsPage({ user, onSelectCpf }: SettingsPageProps) {
                     </div>
                   </div>
 
+                  {/* ✅ BOTÃO SELECIONAR IGUAL AO CADASTRAR (VERDE) */}
                   <button
-                    onClick={() => onSelectCpf?.(onlyDigits(c.cpf || ""))}
-                    className="shrink-0 px-3 py-2 rounded-xl border border-blue-500/20 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20 transition-colors flex items-center gap-2"
-                    title="Selecionar CPF"
+                    onClick={() => handleSelect(c.cpf || "")}
                     type="button"
+                    title="Selecionar CPF"
+                    className="shrink-0 bg-green-500 text-[#0a1628] font-bold px-3 py-2 text-xs rounded-2xl hover:bg-green-400 transition-all shadow-lg shadow-green-500/10 flex items-center justify-center gap-2"
                   >
                     <ExternalLink className="w-4 h-4" />
-                    <span className="hidden sm:inline text-xs font-semibold">
-                      Selecionar
-                    </span>
+                    <span className="hidden sm:inline">Selecionar</span>
                   </button>
                 </div>
               ))}
@@ -472,7 +244,7 @@ export function SettingsPage({ user, onSelectCpf }: SettingsPageProps) {
         </div>
       </div>
 
-      {/* Settings Options (mantido, só leve ajuste de espaçamento/hover) */}
+      {/* Options */}
       <div className="bg-[#1a2942] rounded-2xl p-4 border border-gray-800">
         <button className="w-full flex items-center justify-between p-4 hover:bg-[#0a1628] rounded-xl transition-colors">
           <div className="flex items-center gap-3">

@@ -3,17 +3,29 @@ import { Login } from "./components/Login";
 import { Signup } from "./components/Signup";
 import { Dashboard } from "./components/Dashboard";
 import { ResetPassword } from "./components/ResetPassword";
+import { ForgotPassword } from "./components/ForgotPassword";
 import { supabase } from "./lib/supabase";
 
-type Screen = "login" | "signup" | "dashboard" | "reset-password";
+type Screen =
+  | "login"
+  | "signup"
+  | "dashboard"
+  | "forgot-password"
+  | "reset-password"
+  | "settings"
+  | "customer_register";
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<Screen>("login");
-  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
+  const [user, setUser] = useState<{ name: string; email: string } | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
 
+  // ✅ novo: CPF selecionado na base
+  const [selectedCpf, setSelectedCpf] = useState<string>("");
+
   // ✅ Detecta rota simples sem React Router
-  // Quando o usuário clica no link do e-mail do Supabase, ele volta para /reset-password
   useEffect(() => {
     const path = window.location.pathname;
     if (path === "/reset-password") {
@@ -30,8 +42,9 @@ export default function App() {
         console.error("Erro ao obter sessão:", error.message);
         setUser(null);
 
-        // Se estiver resetando senha, não forçamos voltar para login
-        setCurrentScreen((prev) => (prev === "reset-password" ? prev : "login"));
+        setCurrentScreen((prev) =>
+          prev === "reset-password" ? prev : "login",
+        );
 
         setLoading(false);
         return;
@@ -44,11 +57,15 @@ export default function App() {
           email: u.email || "",
         });
 
-        // Se já está resetando senha, mantém na tela de reset
-        setCurrentScreen((prev) => (prev === "reset-password" ? prev : "dashboard"));
+        setCurrentScreen((prev) =>
+          prev === "reset-password" ? prev : "dashboard",
+        );
       } else {
         setUser(null);
-        setCurrentScreen((prev) => (prev === "reset-password" ? prev : "login"));
+
+        setCurrentScreen((prev) =>
+          prev === "reset-password" ? prev : "login",
+        );
       }
 
       setLoading(false);
@@ -56,31 +73,43 @@ export default function App() {
 
     loadSession();
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      const u = session?.user;
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        const u = session?.user;
 
-      if (u) {
-        setUser({
-          name: (u.user_metadata?.name as string) || "Usuário",
-          email: u.email || "",
-        });
+        if (u) {
+          setUser({
+            name: (u.user_metadata?.name as string) || "Usuário",
+            email: u.email || "",
+          });
 
-        // Se está resetando senha, não pula para dashboard
-        setCurrentScreen((prev) => (prev === "reset-password" ? prev : "dashboard"));
-      } else {
-        setUser(null);
-        setCurrentScreen((prev) => (prev === "reset-password" ? prev : "login"));
-      }
-    });
+          setCurrentScreen((prev) =>
+            prev === "reset-password" ? prev : "dashboard",
+          );
+        } else {
+          setUser(null);
+
+          setCurrentScreen((prev) =>
+            prev === "reset-password" ? prev : "login",
+          );
+        }
+      },
+    );
 
     return () => {
       listener.subscription.unsubscribe();
     };
   }, []);
 
-  // ✅ Login REAL (Supabase) - retorna mensagem de erro para o Login.tsx exibir
-  const handleLogin = async (email: string, password: string): Promise<string | null> => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+  // ✅ Login REAL (Supabase)
+  const handleLogin = async (
+    email: string,
+    password: string,
+  ): Promise<string | null> => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
     if (!error) return null;
 
     const msg = (error.message || "").toLowerCase();
@@ -102,9 +131,7 @@ export default function App() {
   const handleGoogleLogin = async (): Promise<string | null> => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: {
-        redirectTo: window.location.origin,
-      },
+      options: { redirectTo: window.location.origin },
     });
 
     if (error) {
@@ -112,12 +139,15 @@ export default function App() {
       return "Erro ao iniciar login com Google.";
     }
 
-    // O Supabase redireciona e o onAuthStateChange resolve após o retorno
     return null;
   };
 
   // ✅ Cadastro REAL (Supabase)
-  const handleSignup = async (name: string, email: string, password: string) => {
+  const handleSignup = async (
+    name: string,
+    email: string,
+    password: string,
+  ) => {
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -130,7 +160,7 @@ export default function App() {
     }
 
     alert(
-      "Conta criada! Se a confirmação por e-mail estiver ativa, verifique sua caixa de entrada."
+      "Conta criada! Se a confirmação por e-mail estiver ativa, verifique sua caixa de entrada.",
     );
   };
 
@@ -142,6 +172,17 @@ export default function App() {
   const handleResetDone = () => {
     window.history.replaceState({}, "", "/");
     setCurrentScreen("login");
+  };
+
+  // ✅ voltar do forgot para login
+  const handleBackToLogin = () => {
+    setCurrentScreen("login");
+  };
+
+  // ✅ Selecionou cliente -> salva cpf e vai pro dashboard
+  const handleSelectCpf = (cpf: string) => {
+    setSelectedCpf(cpf);
+    setCurrentScreen("dashboard");
   };
 
   if (loading) {
@@ -158,11 +199,17 @@ export default function App() {
         <ResetPassword onDone={handleResetDone} />
       )}
 
+      {currentScreen === "forgot-password" && (
+        <ForgotPassword onBackToLogin={handleBackToLogin} />
+      )}
+
       {currentScreen === "login" && (
         <Login
           onLogin={handleLogin}
           onGoogleLogin={handleGoogleLogin}
+          // ✅ se você não quer signup na tela, pode remover isso no Login.tsx também
           onNavigateToSignup={() => setCurrentScreen("signup")}
+          onNavigateToForgotPassword={() => setCurrentScreen("forgot-password")}
         />
       )}
 
@@ -174,7 +221,15 @@ export default function App() {
       )}
 
       {currentScreen === "dashboard" && user && (
-        <Dashboard user={user} onLogout={handleLogout} />
+        <Dashboard
+          user={user}
+          cpf={selectedCpf} // ✅ aqui vai o CPF selecionado
+          onLogout={handleLogout}
+          onNavigate={(page: "settings" | "customer_register" | "dashboard") =>
+            setCurrentScreen(page)
+          }
+          onSelectCpf={handleSelectCpf} // ✅ opcional: se o Dashboard também trocar cliente
+        />
       )}
     </div>
   );

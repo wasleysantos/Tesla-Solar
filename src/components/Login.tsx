@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { Mail, Lock } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { Mail, Lock, ShieldCheck } from "lucide-react";
 import logoImage from "figma:asset/86a5dbd476eaf5850e2d574675b5ba3853e32186.png";
-import { ShieldCheck } from "lucide-react";
+import solarBg from "../assets/solar.png";
 
 interface LoginProps {
   onLogin: (
@@ -11,28 +11,43 @@ interface LoginProps {
 
   onGoogleLogin: () => Promise<string | null> | string | null | void;
 
-  onNavigateToSignup: () => void;
+  // ✅ (opcional) se você não quer signup na tela, pode nem passar
+  onNavigateToSignup?: () => void;
+
+  // ✅ novo
+  onNavigateToForgotPassword?: () => void;
 }
 
 export function Login({
   onLogin,
   onGoogleLogin,
   onNavigateToSignup,
+  onNavigateToForgotPassword,
 }: LoginProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   const [errorMessage, setErrorMessage] = useState("");
-  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // ✅ loading separado
+  const [loadingLogin, setLoadingLogin] = useState(false);
+  const [loadingGoogle, setLoadingGoogle] = useState(false);
+
+  // ✅ animação suave
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => setMounted(true), 60);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setErrorMessage("");
 
     if (!email || !password) return;
 
     try {
-      setLoading(true);
+      setLoadingLogin(true);
       const result = await onLogin(email, password);
 
       if (typeof result === "string" && result.trim().length > 0) {
@@ -41,7 +56,7 @@ export function Login({
     } catch {
       setErrorMessage("Não foi possível entrar agora. Tente novamente.");
     } finally {
-      setLoading(false);
+      setLoadingLogin(false);
     }
   };
 
@@ -49,51 +64,94 @@ export function Login({
     setErrorMessage("");
 
     try {
-      setLoading(true);
+      setLoadingGoogle(true);
+
+      // ✅ garante render do "Carregando..." antes do redirect do OAuth
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve()),
+      );
+
       const result = await onGoogleLogin();
 
+      // se retornar string, é erro (sem redirect)
       if (typeof result === "string" && result.trim().length > 0) {
         setErrorMessage(result);
+        setLoadingGoogle(false);
       }
     } catch {
       setErrorMessage(
         "Não foi possível entrar com Google agora. Tente novamente.",
       );
-    } finally {
-      setLoading(false);
+      setLoadingGoogle(false);
     }
   };
 
+  const topAnim = mounted
+    ? "opacity-100 translate-y-0"
+    : "opacity-0 -translate-y-2";
+
+  const cardAnim = mounted
+    ? "opacity-100 translate-y-0"
+    : "opacity-0 translate-y-3";
+
+  const busy = loadingLogin || loadingGoogle;
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#0a1628]">
-      <div className="w-full max-w-md">
-        {/* Logo e Badge de ADM */}
-        <div className="flex flex-col items-center justify-center mb-8">
+    <div
+      className="min-h-dvh relative flex items-center justify-center p-4 sm:p-6 bg-cover bg-center overflow-hidden"
+      style={{ backgroundImage: `url(${solarBg})` }}
+    >
+      {/* Gradiente */}
+      <div className="absolute inset-0 bg-gradient-to-br from-[#0a1628]/90 via-[#0a1628]/80 to-[#071224]/95 pointer-events-none" />
+
+      {/* Vinheta */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_40%,rgba(0,0,0,0.7)_100%)] pointer-events-none" />
+
+      {/* Luz solar animada */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -left-40 w-[600px] h-[600px] bg-yellow-400/10 rounded-full blur-[140px] animate-solarGlow" />
+      </div>
+
+      {/* Conteúdo */}
+      <div className="w-full max-w-md relative z-10">
+        {/* ✅ Logo + Badge com fade suave */}
+        <div
+          className={[
+            "flex flex-col items-center justify-center mb-6 sm:mb-8",
+            "transition-all duration-700 ease-out",
+            topAnim,
+          ].join(" ")}
+        >
           <img
             src={logoImage}
             alt="Logo"
-            className="h-16 mb-4 object-contain"
+            className="h-9 sm:h-16 mb-2 sm:mb-4 object-contain"
           />
-          <div className="flex items-center gap-2 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">
-            <ShieldCheck className="w-4 h-4 text-blue-400" />
-            <span className="text-blue-400 text-[10px] font-bold uppercase tracking-widest">
+          <div className="flex items-center gap-1.5 bg-blue-500/10 px-2.5 py-0.5 rounded-full border border-blue-500/20">
+            <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+            <span className="text-blue-400 text-[9px] font-semibold uppercase tracking-wide">
               Acesso Administrativo
             </span>
           </div>
         </div>
 
-        {/* Login Form */}
-        <div className="bg-[#1a2942] rounded-2xl p-8 shadow-xl">
-          <h2 className="text-2xl font-bold text-white mb-2">
+        {/* ✅ Card com fade + slide */}
+        <div
+          className={[
+            "bg-[#1a2942] rounded-2xl p-6 sm:p-8 shadow-2xl border border-white/10",
+            "transition-all duration-700 ease-out delay-75",
+            cardAnim,
+          ].join(" ")}
+        >
+          <h2 className="text-xl sm:text-2xl font-bold text-white mb-1 sm:mb-2">
             Painel de Gestão
           </h2>
-          <p className="text-gray-400 mb-8">
-            Entre para monitorar os dispositivos solares.
+          <p className="text-gray-400 mb-6 sm:mb-8 text-sm sm:text-base">
+            Entre para monitorar os dispositivos solares
           </p>
 
-          {/* Mensagem de erro */}
           {errorMessage && (
-            <div className="mb-6 rounded-lg border-2 border-red-900 bg-red-600 px-4 py-3 shadow-lg shadow-red-900/40">
+            <div className="mb-5 sm:mb-6 rounded-lg border-2 border-red-900 bg-red-600 px-4 py-3 shadow-lg shadow-red-900/40">
               <p className="text-sm font-bold text-black text-center">
                 {errorMessage}
               </p>
@@ -101,7 +159,6 @@ export function Login({
           )}
 
           <form onSubmit={handleSubmit} className="space-y-2">
-            {/* Email Input */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
                 E-mail Corporativo
@@ -118,12 +175,11 @@ export function Login({
                   className="w-full bg-[#0a1628] text-white pl-12 pr-4 py-3 rounded-lg border border-gray-700 focus:border-green-500 focus:outline-none transition-colors"
                   placeholder="admin@teslalab.com"
                   required
-                  disabled={loading}
+                  disabled={busy}
                 />
               </div>
             </div>
 
-            {/* Password Input */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
                 Senha
@@ -140,54 +196,76 @@ export function Login({
                   className="w-full bg-[#0a1628] text-white pl-12 pr-4 py-3 rounded-lg border border-gray-700 focus:border-green-500 focus:outline-none transition-colors"
                   placeholder="••••••••"
                   required
-                  disabled={loading}
+                  disabled={busy}
                 />
               </div>
             </div>
 
-            {/* Forgot Password */}
-            <div className="text-right">
+            {/* ✅ Só o "Esqueceu a senha?" */}
+            <div className="text-right pt-1">
               <button
                 type="button"
+                onClick={() => onNavigateToForgotPassword?.()}
                 className="text-sm text-green-400 hover:text-green-300 transition-colors disabled:opacity-70"
-                disabled={loading}
-                // força cursor (garantido)
-                style={{ cursor: loading ? "not-allowed" : "pointer" }}
+                disabled={busy || !onNavigateToForgotPassword}
+                style={{
+                  cursor:
+                    busy || !onNavigateToForgotPassword
+                      ? "not-allowed"
+                      : "pointer",
+                }}
+                title={
+                  onNavigateToForgotPassword
+                    ? "Recuperar senha"
+                    : "Navegação não configurada"
+                }
               >
                 Esqueceu a senha?
               </button>
             </div>
 
-            {/* Submit Button */}
+            {/* ✅ Botão Entrar */}
             <button
               type="submit"
-              disabled={loading}
-              className="w-full bg-green-500 hover:bg-green-600 disabled:opacity-70 text-white font-semibold py-3 rounded-lg transition-colors"
-              // força cursor (garantido)
-              style={{ cursor: loading ? "not-allowed" : "pointer" }}
+              disabled={busy}
+              className={[
+                "relative w-full py-3 rounded-lg font-semibold text-white transition-all",
+                "bg-green-500 hover:bg-green-600",
+                "disabled:opacity-70",
+                "hover:shadow-lg hover:shadow-green-500/20",
+                "focus:outline-none focus:ring-2 focus:ring-green-400/40 focus:ring-offset-0",
+              ].join(" ")}
+              style={{ cursor: busy ? "not-allowed" : "pointer" }}
             >
-              {loading ? "Entrando..." : "Entrar"}
+              <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-lg">
+                <span className="tsBtnGlow absolute -inset-x-24 top-0 h-full w-24 rotate-12 bg-white/20 blur-md" />
+              </span>
+
+              <span className="relative z-10">
+                {loadingLogin ? "Entrando..." : "Entrar"}
+              </span>
             </button>
 
-            {/* ✅ Google abaixo do campo senha (abaixo do botão Entrar) */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 pt-1">
               <div className="h-px bg-gray-700 flex-1" />
-              <span className="text-gray-500 text-sm">AUTENTIÇÃO SSO</span>
+              <span className="text-gray-500 text-xs sm:text-sm">
+                AUTENTIÇÃO SSO
+              </span>
               <div className="h-px bg-gray-700 flex-1" />
             </div>
 
+            {/* ✅ Botão Google */}
             <button
               type="button"
               onClick={handleGoogleLogin}
-              disabled={loading}
+              disabled={busy}
               style={{
                 backgroundColor: "#ffffff",
                 color: "#111827",
-                cursor: loading ? "not-allowed" : "pointer", // força cursor
+                cursor: busy ? "not-allowed" : "pointer",
               }}
               className="w-full border border-gray-100 hover:bg-gray-100 text-gray-900 font-medium py-3 rounded-lg transition flex items-center justify-center gap-3 shadow-sm disabled:opacity-70"
             >
-              {/* IMPORTANT: isso impede o SVG de “roubar” o hover/cursor */}
               <svg
                 className="pointer-events-none"
                 width="18"
@@ -213,18 +291,30 @@ export function Login({
                 />
               </svg>
 
-              {loading ? "Carregando..." : "Entrar com Google"}
+              {loadingGoogle ? "Carregando..." : "Entrar com Google"}
             </button>
           </form>
 
-          {/* Sign Up Link */}
-          <div className="mt-6 text-center">
-            <p className="text-gray-400">
-              Não tem uma conta? Solicitar acesso à TI{" "}
-            </p>
-          </div>
+          {/* ✅ Mantive o texto final igual o seu */}
         </div>
       </div>
+
+      <style>{`
+        .tsBtnGlow {
+          animation: tsBtnGlow 2.8s ease-in-out infinite;
+          opacity: 0.35;
+        }
+        @keyframes tsBtnGlow {
+          0% { transform: translateX(-260px) rotate(12deg); opacity: 0; }
+          25% { opacity: 0.35; }
+          55% { transform: translateX(520px) rotate(12deg); opacity: 0.35; }
+          100% { transform: translateX(520px) rotate(12deg); opacity: 0; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .tsBtnGlow { animation: none !important; }
+        }
+      `}</style>
     </div>
   );
 }

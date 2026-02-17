@@ -7,11 +7,15 @@ import {
   TrendingDown,
   Clock,
   User,
+  ChevronRight,
 } from "lucide-react";
 import jsPDF from "jspdf";
 
 interface HistoricProps {
   cpf: string;
+
+  // ✅ liga o histórico com as páginas/abas do seu app (sem react-router-dom)
+  onNavigate?: (page: "generation" | "consumption") => void;
 }
 
 type RangeKey = "today" | "7d" | "30d";
@@ -51,7 +55,6 @@ function startIsoForRange(range: RangeKey) {
   const now = new Date();
 
   if (range === "today") {
-    // início do dia local
     const start = new Date(
       now.getFullYear(),
       now.getMonth(),
@@ -68,6 +71,7 @@ function startIsoForRange(range: RangeKey) {
 }
 
 // ✅ Integra kW -> kWh (trapézio)
+// (assumindo solar_generation e house_consumption em kW no banco)
 function integrateKwh(itemsAsc: any[]) {
   if (!itemsAsc || itemsAsc.length < 2) {
     const only = itemsAsc?.[0];
@@ -113,14 +117,14 @@ function integrateKwh(itemsAsc: any[]) {
 
 const FALLBACK_TARIFA = 0.85; // ajuste se quiser
 
-export function Historic({ cpf }: HistoricProps) {
+export function Historic({ cpf, onNavigate }: HistoricProps) {
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // ✅ filtro de período
   const [range, setRange] = useState<RangeKey>("7d");
 
-  // ✅ nome + tarifa do cliente (igual dashboard)
+  // ✅ nome + tarifa do cliente
   const [personName, setPersonName] = useState("");
   const [nameNotFound, setNameNotFound] = useState(false);
   const [loadingName, setLoadingName] = useState(false);
@@ -236,7 +240,6 @@ export function Historic({ cpf }: HistoricProps) {
       const dayItemsAsc = [...dayItemsDesc].reverse();
       const sum = integrateKwh(dayItemsAsc);
 
-      // ✅ Economizado do dia baseado no GERADO (kWh) × tarifa
       const econBrl = sum.genKwh * (tarifaKwh || 0);
 
       return {
@@ -251,6 +254,21 @@ export function Historic({ cpf }: HistoricProps) {
     });
   }, [history, tarifaKwh]);
 
+  const lastTs = history?.[0]?.timestamp
+    ? new Date(history[0].timestamp)
+    : null;
+
+  const lastUpdatedLabel = lastTs
+    ? new Intl.DateTimeFormat("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }).format(lastTs)
+    : "—";
+
   const exportToPDF = () => {
     const doc = new jsPDF();
     doc.setFontSize(16);
@@ -261,6 +279,7 @@ export function Historic({ cpf }: HistoricProps) {
 
     const rangeLabel =
       range === "today" ? "Hoje" : range === "7d" ? "7 dias" : "30 dias";
+
     doc.text(`Período: ${rangeLabel}`, 14, personName ? 42 : 36);
     doc.text(
       `Tarifa: R$ ${tarifaKwh.toFixed(2)}/kWh`,
@@ -279,9 +298,9 @@ export function Historic({ cpf }: HistoricProps) {
       doc.text(
         `Resumo: Gerado ${g.summary.genKwh.toFixed(2)} kWh | Consumido ${g.summary.consKwh.toFixed(
           2,
-        )} kWh | Saldo ${g.summary.saldoKwh.toFixed(2)} kWh | Economizado R$ ${g.summary.econBrl.toFixed(
+        )} kWh | Saldo ${g.summary.saldoKwh.toFixed(
           2,
-        )}`,
+        )} kWh | Economizado R$ ${g.summary.econBrl.toFixed(2)}`,
         14,
         y,
       );
@@ -324,14 +343,15 @@ export function Historic({ cpf }: HistoricProps) {
     doc.save(`historico-${cpf}.pdf`);
   };
 
+  // ✅ ATUALIZAÇÃO: Botão ativo verde sólido igual PDF
   const RangeButton = ({ k, label }: { k: RangeKey; label: string }) => (
     <button
       type="button"
       onClick={() => setRange(k)}
-      className={`px-3 py-2 rounded-lg text-[11px] font-bold transition-colors border ${
+      className={`px-4 py-2 rounded-lg text-[12px] font-semibold transition-all duration-200 ${
         range === k
-          ? "bg-green-500/20 text-green-300 border-green-500/40"
-          : "bg-transparent text-gray-300 border-gray-700 hover:bg-white/5"
+          ? "bg-green-500 hover:bg-green-600 text-white shadow-lg shadow-green-500/20"
+          : "bg-transparent text-gray-300 border border-gray-700 hover:bg-white/5"
       }`}
     >
       {label}
@@ -348,54 +368,63 @@ export function Historic({ cpf }: HistoricProps) {
 
   return (
     <div className="space-y-4">
+      {/* Header (compacto igual Geração) */}
       <div className="flex items-start justify-between mb-6 gap-3">
-        <div>
-          <h2 className="text-2xl font-bold text-white">Histórico Real</h2>
+        <div className="flex flex-col">
+          <h2 className="text-2xl font-bold text-white">Histórico</h2>
 
-          {/* ✅ CPF + Nome (igual dashboard) */}
-          <div className="flex items-start gap-2 text-green-400 text-xs mt-1">
-            <User className="w-3 h-3 mt-0.5" />
-            <div className="leading-tight">
-              <div>{cpf || "Nenhum cliente selecionado"}</div>
-              {cpf && (
-                <div className="text-gray-300 mt-0.5">
-                  {loadingName
-                    ? "Carregando nome..."
-                    : personName
-                      ? personName
-                      : nameNotFound
-                        ? "CPF não encontrado"
-                        : ""}
-                </div>
-              )}
-            </div>
+          {/* CPF (mesmo estilo da Geração) */}
+          <div className="flex items-center gap-2 text-green-400 text-xs mt-1">
+            <User className="w-3 h-3" />
+            <span>CPF: {cpf || "Aguardando seleção..."}</span>
           </div>
 
-          {/* ✅ Filtro Hoje / 7 dias / 30 dias */}
-          <div className="flex gap-3 mt-2">
-            <RangeButton k="today" label="Hoje" />
-            <RangeButton k="7d" label="7 dias" />
-            <RangeButton k="30d" label="30 dias" />
+          {/* Nome (mesmo estilo da Geração) */}
+          <div className="text-xs text-gray-300 mt-1">
+            {cpf
+              ? loadingName
+                ? "Carregando nome..."
+                : personName
+                  ? personName
+                  : nameNotFound
+                    ? "CPF não encontrado"
+                    : "—"
+              : "—"}
           </div>
 
-          {/* ✅ Tarifa exibida */}
-          {cpf && (
-            <div className="text-[11px] text-gray-400 mt-2">
-              Tarifa atual:{" "}
-              <span className="text-gray-200 font-semibold">
-                R$ {tarifaKwh.toFixed(2)}/kWh
-              </span>
-              {tarifaError && (
-                <span className="text-yellow-400 ml-2">{tarifaError}</span>
-              )}
+          {/* Filtros + infos (mais compacto) */}
+          <div className="flex flex-wrap items-center gap-3 mt-2">
+            <div className="flex gap-2">
+              <RangeButton k="today" label="Hoje" />
+              <RangeButton k="7d" label="7 dias" />
+              <RangeButton k="30d" label="30 dias" />
             </div>
-          )}
+
+            {cpf && (
+              <div className="text-[11px] text-gray-400">
+                Tarifa:{" "}
+                <span className="text-gray-200 font-semibold">
+                  R$ {tarifaKwh.toFixed(2)}/kWh
+                </span>
+                {tarifaError && (
+                  <span className="text-yellow-400 ml-2">{tarifaError}</span>
+                )}
+              </div>
+            )}
+
+            {cpf && (
+              <div className="text-[11px] text-gray-500">
+                Última atualização:{" "}
+                <span className="text-gray-300">{lastUpdatedLabel}</span>
+              </div>
+            )}
+          </div>
         </div>
 
         <button
           onClick={exportToPDF}
           disabled={!cpf || history.length === 0}
-          className="flex items-center gap-3 bg-green-500 hover:bg-green-600 disabled:bg-gray-700 text-white px-3 py-1.5 rounded-lg transition-colors text-xs font-semibold"
+          className="flex items-center gap-3 bg-green-500 hover:bg-green-600 disabled:bg-gray-700 text-white px-3 py-2 rounded-lg transition-colors text-xs font-semibold"
         >
           <Download className="w-4 h-4" />
           PDF
@@ -420,32 +449,92 @@ export function Historic({ cpf }: HistoricProps) {
         </div>
       ) : (
         <>
-          {/* Cards (último registro) */}
+          {/* ✅ CARDS COM BOTÃO (igual seu print) */}
           <div className="grid grid-cols-2 gap-3 mb-6">
+            {/* GERAÇÃO */}
             <div className="bg-[#1a2942] rounded-xl p-4 border border-gray-800">
-              <div className="flex items-center gap-2 mb-2">
-                <TrendingUp className="w-5 h-5 text-green-400" />
-                <span className="text-gray-400 text-[10px] uppercase font-bold">
-                  Geração Solar
-                </span>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-green-400" />
+                  <span className="text-gray-400 text-[10px] uppercase font-bold tracking-wider">
+                    GERAÇÃO SOLAR
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => onNavigate?.("generation")}
+                  disabled={!cpf}
+                  className="p-2 rounded-lg border border-gray-700 hover:bg-white/5 transition-colors
+                             disabled:opacity-50 disabled:hover:bg-transparent"
+                  title="Abrir página de Geração"
+                >
+                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                </button>
               </div>
-              <p className="text-2xl font-bold text-white">
-                {history[0]?.solar_generation || 0}{" "}
+
+              <p className="text-2xl font-bold text-white mt-2">
+                {toNum(history[0]?.solar_generation).toFixed(2)}{" "}
                 <span className="text-xs font-normal text-gray-400">kW</span>
               </p>
+
+              <div className="flex items-center justify-between mt-1">
+                <p className="text-[11px] text-gray-500">
+                  Visualizar detalhes em “Geração”
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onNavigate?.("generation")}
+                  disabled={!cpf}
+                  className="text-[11px] font-semibold text-green-300 hover:text-green-200 transition-colors
+                             disabled:opacity-50"
+                >
+                  Ver
+                </button>
+              </div>
             </div>
 
+            {/* CONSUMO */}
             <div className="bg-[#1a2942] rounded-xl p-4 border border-gray-800">
-              <div className="flex items-center gap-2 mb-2">
-                <TrendingDown className="w-5 h-5 text-blue-400" />
-                <span className="text-gray-400 text-[10px] uppercase font-bold">
-                  Carga Casa
-                </span>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <TrendingDown className="w-5 h-5 text-blue-400" />
+                  <span className="text-gray-400 text-[10px] uppercase font-bold tracking-wider">
+                    CARGA CASA
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => onNavigate?.("consumption")}
+                  disabled={!cpf}
+                  className="p-2 rounded-lg border border-gray-700 hover:bg-white/5 transition-colors
+                             disabled:opacity-50 disabled:hover:bg-transparent"
+                  title="Abrir página de Consumo"
+                >
+                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                </button>
               </div>
-              <p className="text-2xl font-bold text-white">
-                {history[0]?.house_consumption || 0}{" "}
+
+              <p className="text-2xl font-bold text-white mt-2">
+                {toNum(history[0]?.house_consumption).toFixed(2)}{" "}
                 <span className="text-xs font-normal text-gray-400">kW</span>
               </p>
+
+              <div className="flex items-center justify-between mt-1">
+                <p className="text-[11px] text-gray-500">
+                  Visualizar detalhes em “Consumo”
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onNavigate?.("consumption")}
+                  disabled={!cpf}
+                  className="text-[11px] font-semibold text-blue-300 hover:text-blue-200 transition-colors
+                             disabled:opacity-50"
+                >
+                  Ver
+                </button>
+              </div>
             </div>
           </div>
 
@@ -453,24 +542,30 @@ export function Historic({ cpf }: HistoricProps) {
           <div className="space-y-6">
             {grouped.map((g) => (
               <div key={g.dateKey} className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-gray-200">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-800 bg-white/5">
                     <Calendar className="w-4 h-4 text-green-400" />
-                    <h3 className="font-bold text-sm">{g.title}</h3>
+                    <h3 className="text-white font-semibold text-base leading-none tracking-wide">
+                      {g.title}
+                    </h3>
                   </div>
 
-                  {/* ✅ Resumo do dia */}
-                  <div className="text-right text-[10px] text-gray-300">
-                    <div>
-                      <span className="text-green-400 font-bold">
+                  <div className="text-right text-[12px]">
+                    <div className="text-gray-300">
+                      <span className="text-green-400 font-semibold">
                         Gerado: {g.summary.genKwh.toFixed(2)} kWh
                       </span>
-                      <span className="mx-2 text-gray-600">|</span>
-                     
+                      <span className="mx-2 text-gray-700">|</span>
+                      <span className="text-blue-400 font-semibold">
+                        Consumido: {g.summary.consKwh.toFixed(2)} kWh
+                      </span>
+                      <span className="mx-2 text-gray-700">|</span>
+                      <span className="text-gray-200 font-semibold">
+                        Saldo: {g.summary.saldoKwh.toFixed(2)} kWh
+                      </span>
                     </div>
 
-
-                    <div className="text-gray-200 font-bold">
+                    <div className="text-gray-200 font-semibold mt-1">
                       Economia do dia:{" "}
                       <span className="text-green-300">
                         R$ {g.summary.econBrl.toFixed(2)}
@@ -479,51 +574,56 @@ export function Historic({ cpf }: HistoricProps) {
                   </div>
                 </div>
 
-                {g.items.map((item: any) => {
-                  const gen = Math.max(0, toNum(item.solar_generation));
-                  const cons = Math.max(0, toNum(item.house_consumption));
-                  const saldo = gen - cons;
+                <div className="bg-[#1a2942] rounded-xl border border-gray-800 overflow-hidden">
+                  {g.items.map((item: any, idx: number) => {
+                    const gen = Math.max(0, toNum(item.solar_generation));
+                    const cons = Math.max(0, toNum(item.house_consumption));
+                    const saldo = gen - cons;
 
-                  return (
-                    <div
-                      key={item.id}
-                      className="bg-[#1a2942] rounded-xl p-4 border-l-4 border-green-500 hover:bg-[#233554] transition-colors"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <Clock className="w-5 h-5 text-green-400" />
-                          <div>
-                            <h3 className="text-white font-semibold text-sm">
-                              {new Date(item.timestamp).toLocaleTimeString(
-                                "pt-BR",
-                                {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                  second: "2-digit",
-                                },
-                              )}
-                            </h3>
-                            <p className="text-gray-500 text-[10px]">
-                              Tensão: {toNum(item.voltage)}V
-                            </p>
+                    const hora = new Date(item.timestamp).toLocaleTimeString(
+                      "pt-BR",
+                      { hour: "2-digit", minute: "2-digit", second: "2-digit" },
+                    );
+
+                    return (
+                      <div
+                        key={item.id ?? `${g.dateKey}-${idx}`}
+                        className={`px-4 py-3 flex items-center justify-between gap-4 ${
+                          idx !== 0 ? "border-t border-gray-800" : ""
+                        } hover:bg-white/5 transition-colors`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <Clock className="w-4 h-4 text-gray-400" />
+                          <div className="min-w-0">
+                            <div className="text-white font-semibold text-sm">
+                              {hora}
+                            </div>
+                            <div className="text-gray-500 text-[11px]">
+                              Tensão:{" "}
+                              <span className="text-gray-300">
+                                {toNum(item.voltage)}V
+                              </span>
+                            </div>
                           </div>
                         </div>
 
-                        <div className="text-right">
-                          <p className="text-white font-bold text-xs">
+                        <div className="text-right shrink-0">
+                          <div className="text-gray-200 font-bold text-[12px]">
                             Saldo: {saldo.toFixed(2)} kW
-                          </p>
-                          <p className="text-green-400 text-[10px]">
-                            In: {gen.toFixed(2)} kW
-                          </p>
-                          <p className="text-blue-400 text-[10px]">
-                            Out: {cons.toFixed(2)} kW
-                          </p>
+                          </div>
+                          <div className="flex items-center justify-end gap-3 mt-0.5 text-[11px]">
+                            <span className="text-green-400 font-semibold">
+                              In: {gen.toFixed(2)} kW
+                            </span>
+                            <span className="text-blue-400 font-semibold">
+                              Out: {cons.toFixed(2)} kW
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             ))}
           </div>
